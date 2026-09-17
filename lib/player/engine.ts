@@ -1,5 +1,5 @@
 // Picks the right playback strategy for a stream and wires it to a <video>.
-// Live/TS → mpegts.js · HLS (.m3u8) → hls.js · mp4 → native · mkv/other → native (may fail).
+// Live/HLS (.m3u8) → hls.js · mp4/mkv → native
 
 export type EngineKind = "mpegts" | "hls" | "native" | "unsupported";
 
@@ -9,16 +9,27 @@ export interface EngineHandle {
 }
 
 const NATIVE_OK = ["mp4", "m4v", "mov", "webm", "ogg"];
-const RISKY = ["mkv", "avi", "wmv", "flv", "ts"]; // browser-native support is unreliable
+const RISKY = ["mkv", "avi", "wmv", "flv"];
 
 export function pickEngine(url: string, ext: string, isLive: boolean): EngineKind {
   const u = url.toLowerCase();
-  if (u.includes("/api/hls") || /\.m3u8(\?|$)/.test(u)) return "hls";
   const e = ext.toLowerCase().replace(/^\./, "");
-  if (e === "m3u8") return "hls";
-  if (isLive || e === "ts") return "mpegts";
-  if (NATIVE_OK.includes(e)) return "native";
-  if (RISKY.includes(e)) return "native"; // attempt; onError surfaces a fallback
+
+  // 1. Si c'est un Live ou un manifeste m3u8, on utilise TOUJOURS hls.js
+  if (isLive || e === "m3u8" || u.includes("ext=m3u8") || u.includes("/api/hls") || /\.m3u8(\?|$)/.test(u)) {
+    return "hls";
+  }
+
+  // 2. Si l'extension demande explicitement du TS binaire hors Live
+  if (e === "ts") {
+    return "mpegts";
+  }
+
+  // 3. VOD (Films & Séries - MP4 / MKV) -> Native HTML5
+  if (NATIVE_OK.includes(e) || RISKY.includes(e)) {
+    return "native";
+  }
+
   return "native";
 }
 
@@ -28,13 +39,13 @@ export async function attach(
 ): Promise<EngineHandle> {
   const kind = pickEngine(opts.url, opts.ext, opts.isLive);
 
+  // GESTION HLS (Live TV & Manifestes .m3u8)
   if (kind === "hls") {
     const Hls = (await import("hls.js")).default;
     if (Hls.isSupported()) {
-      // Buffer + retry tuning for smooth, self-healing live playback.
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: false, // favour stability over latency for IPTV
+        lowLatencyMode: false,
         backBufferLength: 30,
         maxBufferLength: 30,
         maxMaxBufferLength: 60,
@@ -45,33 +56,41 @@ export async function attach(
         ...(opts.isLive ? { liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 10 } : {}),
       });
 
-      // auto-recover instead of stalling on transient network/media errors
+      // Auto-récupération des erreurs réseau et média
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-        else hls.destroy();
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        } else {
+          hls.destroy();
+        }
       });
 
       hls.loadSource(opts.url);
       hls.attachMedia(video);
       return { kind: "hls", destroy: () => hls.destroy() };
     }
+
+    // Fallback Safari iOS natif pour HLS
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = opts.url; // Safari native HLS
+      video.src = opts.url;
       return { kind: "native", destroy: () => void (video.src = "") };
     }
+
     video.src = opts.url;
     return { kind: "native", destroy: () => void (video.src = "") };
   }
 
+  // GESTION MPEGTS (Uniquement si explicitement demandé en .ts binaire)
   if (kind === "mpegts") {
     const mpegts = (await import("mpegts.js")).default;
     if (mpegts.getFeatureList().mseLivePlayback || mpegts.isSupported()) {
       const player = mpegts.createPlayer(
         { type: "mpegts", isLive: opts.isLive, url: opts.url },
         {
-          enableStashBuffer: false, // start playing ASAP, don't pre-buffer
+          enableStashBuffer: false,
           stashInitialSize: 128,
           lazyLoad: false,
           liveBufferLatencyChasing: opts.isLive,
@@ -92,12 +111,11 @@ export async function attach(
         },
       };
     }
-    // fall through to native if MSE unavailable
     video.src = opts.url;
     return { kind: "native", destroy: () => void (video.src = "") };
   }
 
-  // native
+  // GESTION NATIVE (Films et Séries en .mp4 / .mkv)
   video.src = opts.url;
   return { kind: "native", destroy: () => void (video.src = "") };
 }
