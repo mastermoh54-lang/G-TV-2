@@ -1,7 +1,8 @@
 // app/api/transcode/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
-import type { StreamKind } from "@/lib/xtream/types";
+import { locatePlayable } from "@/lib/xtream/locate";
+import type { StreamKind, XtreamCredentials } from "@/lib/xtream/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,66 +13,71 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Récupération prioritaire des identifiants transmis en paramètres URL
-  let host = searchParams.get("host");
-  let username = searchParams.get("u");
-  let password = searchParams.get("p");
+  // 1. Récupération des identifiants (params URL ou session)
+  let creds: XtreamCredentials | null = null;
 
-  // Fallback sur le cookie de session si disponible
-  if (!host || !username || !password) {
+  const host = searchParams.get("host");
+  const username = searchParams.get("u");
+  const password = searchParams.get("p");
+
+  if (host && username && password) {
+    creds = { url: host, username, password };
+  } else {
     try {
-      const creds = await requireSession();
-      if (creds?.url && creds?.username && creds?.password) {
-        host = creds.url;
-        username = creds.username;
-        password = creds.password;
-      }
+      creds = await requireSession();
     } catch {}
   }
 
-  if (!host || !username || !password) {
-    console.error("[TRANSCODE] Error 401: No credentials provided");
+  if (!creds || !creds.url || !creds.username || !creds.password) {
     return new Response("Unauthorized stream access", { status: 401 });
   }
 
   const type = (searchParams.get("type") as StreamKind) || "movie";
   const id = searchParams.get("id");
-  const ext = searchParams.get("ext") || "mkv";
+  const ext = searchParams.get("ext") || "mp4";
   const start = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
   if (!id || type === "live") {
-    return new Response("Invalid parameters", { status: 400 });
+    return new Response("Invalid VOD parameters", { status: 400 });
   }
 
-  const cleanHost = String(host).replace(/\/+$/, "");
-  const u = encodeURIComponent(username);
-  const p = encodeURIComponent(password);
+  // 2. Localisation du flux jouable (détection automatique MKV / MP4)
+  let located = null;
+  const candidateExts = Array.from(new Set([ext, "mkv", "mp4", "avi"]));
 
-  // Construction de l'URL brute selon qu'il s'agisse d'un film ou d'une série
-  let inputUrl = "";
-  if (type === "series") {
-    inputUrl = `${cleanHost}/series/${u}/${p}/${id}.${ext}`;
-  } else {
-    inputUrl = `${cleanHost}/movie/${u}/${p}/${id}.${ext}`;
+  for (const currentExt of candidateExts) {
+    try {
+      const res = await locatePlayable(creds, type, id, currentExt);
+      if (res && res.url) {
+        located = res;
+        break;
+      }
+    } catch {}
   }
 
-  // Configuration FFmpeg : Copie de la vidéo + Conversion de l'audio Dolby/AC3 en AAC
+  if (!located || !located.url) {
+    return new Response("Title unavailable from provider", { status: 404 });
+  }
+
+  const input = located.url;
+
+  // 3. Commandes FFmpeg pour remuxer la vidéo et convertir l'audio en AAC
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
-    "-i", inputUrl,
-    "-c:v", "copy",       // Copie directe de l'image (0 lag CPU)
-    "-c:a", "aac",        // Conversion audio AAC pour compatibilité web
-    "-ac", "2",           // Stéréo 2 canaux
+    "-i", input,
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-ac", "2",
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing audio via FFmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${input} — Converting AC3 to AAC`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
