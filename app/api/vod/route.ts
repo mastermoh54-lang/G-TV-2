@@ -12,13 +12,12 @@ export async function GET(req: Request) {
 
     const type = searchParams.get("type") || "movie";
     const id = searchParams.get("id");
-    const ext = searchParams.get("ext") || "mkv";
+    const ext = searchParams.get("ext") || "mp4";
 
     if (!id || type === "live") {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
-    // Transmission explicite des identifiants pour éviter l'erreur 401
     const targetUrl = `${origin}/api/transcode?type=${type}&id=${id}&ext=${ext}&host=${encodeURIComponent(creds.url)}&u=${encodeURIComponent(creds.username)}&p=${encodeURIComponent(creds.password)}`;
 
     return NextResponse.redirect(targetUrl);
