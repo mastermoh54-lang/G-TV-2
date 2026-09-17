@@ -92,11 +92,17 @@ function WatchInner() {
 
   const mediaKind = type as StreamKind;
 
+  // Multi-sources pour garantir le son
   const sources = useMemo(() => {
     if (isLive) {
       return [`/api/live?id=${id}`];
     }
-    return [`/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`];
+    return [
+      // 1. Direct Stream VOD
+      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`,
+      // 2. Transcodeur FFmpeg avec conversion audio AAC si le son natif AC3 n'est pas supporté
+      `/api/transcode?type=${mediaKind}&id=${id}&ext=mkv`,
+    ];
   }, [isLive, mediaKind, id, ext]);
 
   const recentedRef = useRef(false);
