@@ -1,4 +1,4 @@
-// app/api/vod/route.ts (Sur Railway)
+// app/api/vod/route.ts
 import { requireSession } from "@/lib/session";
 import { NextResponse } from "next/server";
 
@@ -14,12 +14,11 @@ export async function GET(req: Request) {
     const id = searchParams.get("id");
     const ext = searchParams.get("ext") || "mkv";
 
-    // Sécurité : Ne jamais appliquer ce traitement au Live TV
     if (!id || type === "live") {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
-    // Transmission des paramètres d'authentification à /api/transcode pour garantir le flux vidéo sans perte de session
+    // On passe les identifiants directement en Query Params pour sauter le problème de cookie sur la balise vidéo HTML5
     const targetUrl = `${origin}/api/transcode?type=${type}&id=${id}&ext=${ext}&host=${encodeURIComponent(creds.url)}&u=${encodeURIComponent(creds.username)}&p=${encodeURIComponent(creds.password)}`;
 
     return NextResponse.redirect(targetUrl);
