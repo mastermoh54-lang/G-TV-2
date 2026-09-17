@@ -1,4 +1,4 @@
-// app/api/transcode/route.ts (Railway uniquement)
+// app/api/transcode/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
 import type { StreamKind } from "@/lib/xtream/types";
@@ -12,61 +12,65 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Essai de récupération de la session active
-  let creds;
-  try {
-    creds = await requireSession();
-  } catch {
-    // Si pas de cookie transmis par la vidéo, secours via paramètres URL éventuels
-  }
-
-  const host = creds?.url || searchParams.get("host");
-  const username = creds?.username || searchParams.get("u");
-  const password = creds?.password || searchParams.get("p");
+  // 1. Authentification
+  let host = searchParams.get("host");
+  let username = searchParams.get("u");
+  let password = searchParams.get("p");
 
   if (!host || !username || !password) {
-    console.error("[TRANSCODE] Error: Credentials unavailable for media stream");
-    return new Response("Unauthorized stream access", { status: 401 });
+    try {
+      const creds = await requireSession();
+      if (creds && creds.url && creds.username && creds.password) {
+        host = creds.url;
+        username = creds.username;
+        password = creds.password;
+      }
+    } catch {}
   }
 
-  const type = (searchParams.get("type") as StreamKind) || "movie";
+  if (!host || !username || !password) {
+    console.error("[TRANSCODE] Error: Missing credentials");
+    return new Response("Missing credentials", { status: 401 });
+  }
+
+  const type = (searchParams.get("type") as StreamKind) || "series";
   const id = searchParams.get("id");
-  const ext = searchParams.get("ext") || "mkv";
+  const ext = searchParams.get("ext") || "mp4";
   const start = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
   if (!id || type === "live") {
-    return new Response("Invalid VOD parameters", { status: 400 });
+    return new Response("Invalid VOD parameters for transcode", { status: 400 });
   }
 
   const cleanHost = String(host).replace(/\/+$/, "");
   const u = encodeURIComponent(username);
   const p = encodeURIComponent(password);
 
-  // Construction dynamique des URLs selon le type (Film vs Série)
+  // 2. Construction de l'URL cible selon le type
   let inputUrl = "";
-  if (type === "movie") {
-    inputUrl = `${cleanHost}/movie/${u}/${p}/${id}.${ext}`;
-  } else {
+  if (type === "series") {
     inputUrl = `${cleanHost}/series/${u}/${p}/${id}.${ext}`;
+  } else {
+    inputUrl = `${cleanHost}/movie/${u}/${p}/${id}.${ext}`;
   }
 
-  // Conversion audio AC3/A52 B/DTS vers AAC Stéréo
+  // 3. Traitement FFmpeg : conversion audio Dolby/AC3/DTS vers AAC Stéréo
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", inputUrl,
-    "-c:v", "copy",       // Inchangé : vidéo H.264 ultra rapide
-    "-c:a", "aac",        // Convertit l'audio AC3 5.1 / A/52 B en AAC
-    "-ac", "2",           // Stéréo 2 canaux universel
+    "-c:v", "copy",       // Vidéo intacte (aucune charge CPU)
+    "-c:a", "aac",        // Convertit l'audio en AAC pour navigateurs
+    "-ac", "2",           // Stéréo 2 canaux
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing audio via FFmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing via FFmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
