@@ -1,6 +1,7 @@
+// app/api/transcode/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
-import { locatePlayable } from "@/lib/xtream/locate";
+import { buildStreamUrl } from "@/lib/xtream/urls";
 import type { StreamKind } from "@/lib/xtream/types";
 
 export const runtime = "nodejs";
@@ -18,58 +19,35 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const type = searchParams.get("type") as StreamKind | null;
+  const type = (searchParams.get("type") as StreamKind) || "movie";
   const id = searchParams.get("id");
-  const ext = searchParams.get("ext") || "mp4";
+  const ext = searchParams.get("ext") || "mkv";
   const start = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
-  if (!type || !id) return new Response("Bad request", { status: 400 });
-
-  // 1. Liste des extensions potentielles à tester chez le fournisseur
-  const candidateExts = Array.from(new Set([ext, "mp4", "mkv", "avi"]));
-  let located = null;
-
-  for (const currentExt of candidateExts) {
-    try {
-      const res = await locatePlayable(creds, type, id, currentExt);
-      if (res && res.url) {
-        located = res;
-        break;
-      }
-    } catch {
-      // Poursuite de la recherche sur l'extension suivante
-    }
+  if (!id || type === "live") {
+    return new Response("Invalid VOD parameters for transcode", { status: 400 });
   }
 
-  if (!located) {
-    console.log(`[TRANSCODE] ${type}/${id} UNAVAILABLE (no playable container)`);
-    return new Response("Title unavailable from provider", { status: 404 });
-  }
+  // Construction directe de l'URL Xtream brute (ex: vod.php ou movie/user/pass/id.mkv)
+  const input = buildStreamUrl(creds, type, id, ext);
 
-  const input = located.url;
-
-  // 2. Arguments FFmpeg optimisés pour forcer la conversion audio en AAC
+  // Conversion forcée de l'audio A/52 B (AC3 5.1) vers AAC Stéréo pour navigateurs
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", input,
-    "-c:v", "copy", // Transmission directe du flux vidéo
-    "-c:a", "aac",  // Conversion forcée de la piste audio en AAC (compatibilité HTML5)
-    "-ac", "2",
+    "-c:v", "copy", // Copie directe de l'image (0 lag CPU)
+    "-c:a", "aac",  // Convertit l'AC3/A52 B en AAC compatible Web
+    "-ac", "2",     // Conversion 5.1 -> 2.0 Stéréo
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${input} — remuxing via ffmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${input} — Converting AC3/A52 to AAC`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-  ff.stderr.on("data", (d) => {
-    const s = String(d).trim();
-    if (s) console.log(`[TRANSCODE] ${type}/${id} ffmpeg error: ${s}`);
-  });
 
   const stream = new ReadableStream({
     start(controller) {
@@ -102,6 +80,7 @@ export async function GET(req: Request) {
     headers: {
       "content-type": "video/mp4",
       "cache-control": "no-store",
+      "access-control-allow-origin": "*",
     },
   });
 }
