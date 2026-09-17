@@ -302,8 +302,13 @@ export default function SeriesDetailPage() {
                   <VideoPlayer
                     key={activeEpisode.id}
                     sources={[
+                      // 1. Essai prioritaire via la route VOD
                       `/api/vod?type=series&id=${activeEpisode.id}&ext=${
                         activeEpisode.container_extension || "mp4"
+                      }`,
+                      // 2. Fallback transcodeur (pour ré-encoder le son AC3/DTS si le navigateur est muet)
+                      `/api/transcode?type=series&id=${activeEpisode.id}&ext=${
+                        activeEpisode.container_extension || "mkv"
                       }`,
                     ]}
                     ext="mp4"
