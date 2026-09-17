@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/session";
+import { getUrl } from "@/lib/hls/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,29 +14,34 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const segUrl = searchParams.get("url");
+  const token = searchParams.get("t");
+  if (!token) return new Response("Missing token", { status: 400 });
 
-  if (!segUrl) return new Response("Missing segment URL", { status: 400 });
+  const targetUrl = getUrl(token);
+  if (!targetUrl) return new Response("Segment token expired or invalid", { status: 404 });
 
   try {
-    const upstreamRes = await fetch(segUrl, {
-      headers: { "User-Agent": UA, Accept: "*/*" },
+    const upstream = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "*/*",
+      },
     });
 
-    if (!upstreamRes.ok) {
-      return new Response("Segment not found", { status: upstreamRes.status });
+    if (!upstream.ok) {
+      return new Response(`Upstream error ${upstream.status}`, { status: upstream.status });
     }
 
     const headers = new Headers();
-    headers.set("Content-Type", "video/mp2t");
+    headers.set("Content-Type", upstream.headers.get("content-type") || "video/mp2t");
     headers.set("Cache-Control", "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
 
-    return new Response(upstreamRes.body, {
+    return new Response(upstream.body, {
       status: 200,
       headers,
     });
   } catch (err: any) {
-    return new Response(`Segment Fetch Error: ${err.message}`, { status: 502 });
+    return new Response(`Segment Proxy Error: ${err.message}`, { status: 502 });
   }
 }
