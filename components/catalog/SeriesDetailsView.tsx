@@ -302,11 +302,6 @@ export default function SeriesDetailPage() {
                   <VideoPlayer
                     key={activeEpisode.id}
                     sources={[
-                      // 1. Essai prioritaire via la route VOD
-                      `/api/vod?type=series&id=${activeEpisode.id}&ext=${
-                        activeEpisode.container_extension || "mp4"
-                      }`,
-                      // 2. Fallback transcodeur (pour ré-encoder le son AC3/DTS si le navigateur est muet)
                       `/api/transcode?type=series&id=${activeEpisode.id}&ext=${
                         activeEpisode.container_extension || "mkv"
                       }`,
@@ -323,7 +318,7 @@ export default function SeriesDetailPage() {
           <div className="flex-1 w-full space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
             {episodes.map((ep: Episode) => {
               const isSelected = activeEpisode?.id === ep.id;
-              const ext = ep.container_extension || "mp4";
+              const ext = ep.container_extension || "mkv";
               const epTitle = ep.title || `Episode ${ep.episode_num}`;
               const resume = progress[`series:${ep.id}`]?.position ?? 0;
 
@@ -367,7 +362,7 @@ export default function SeriesDetailPage() {
                   </div>
 
                   <Link
-                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} ·${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
+                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} · ${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
                     onClick={(e) => e.stopPropagation()}
                     className="p-2 text-fog-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
                     title="Lire en plein écran"
