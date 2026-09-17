@@ -1,4 +1,3 @@
-// components/player/VideoPlayer.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -35,6 +34,7 @@ export function VideoPlayer({ sources, ext = "mp4", isLive = false, poster }: Vi
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        manifestLoadingTimeOut: 10000,
       });
 
       hlsInstance = hls;
@@ -59,7 +59,6 @@ export function VideoPlayer({ sources, ext = "mp4", isLive = false, poster }: Vi
         }
       });
     } else {
-      // Pour Safari natif ou VOD/Séries (MP4)
       video.src = streamUrl;
       video
         .play()
