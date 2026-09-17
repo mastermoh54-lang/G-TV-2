@@ -1,4 +1,4 @@
-// app/api/transcode/route.ts (Sur Railway)
+// app/api/transcode/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
 import type { StreamKind } from "@/lib/xtream/types";
@@ -17,6 +17,12 @@ export async function GET(req: Request) {
     return new Response("Not authenticated", { status: 401 });
   }
 
+  // Sécurité : Vérification stricte des identifiants
+  if (!creds || !creds.url || !creds.username || !creds.password) {
+    console.error("[TRANSCODE] Error: Missing or invalid credentials session");
+    return new Response("Invalid session credentials", { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const type = (searchParams.get("type") as StreamKind) || "movie";
   const id = searchParams.get("id");
@@ -27,48 +33,36 @@ export async function GET(req: Request) {
     return new Response("Invalid VOD parameters for transcode", { status: 400 });
   }
 
-  const host = creds.url.replace(/\/+$/, "");
+  // Nettoyage sécurisé de l'URL hôte
+  const host = String(creds.url).replace(/\/+$/, "");
   const u = encodeURIComponent(creds.username);
   const p = encodeURIComponent(creds.password);
 
-  // Construction dynamique des URLs selon le type (Film vs Série)
-  let inputUrls: string[] = [];
-
+  // Construction de l'URL cible selon le type (Film vs Série)
+  let inputUrl = "";
   if (type === "movie") {
-    // Les 2 formats d'URL courants chez les fournisseurs Xtream pour les films
-    inputUrls = [
-      `${host}/movie/${u}/${p}/${id}.${ext}`,
-      `${host}/vod.php?username=${u}&password=${p}&stream=${id}&extension=${ext}`,
-      `${host}/movie/${u}/${p}/${id}.mp4`
-    ];
+    inputUrl = `${host}/movie/${u}/${p}/${id}.${ext}`;
   } else {
-    // Format pour les séries
-    inputUrls = [
-      `${host}/series/${u}/${p}/${id}.${ext}`,
-      `${host}/series/${u}/${p}/${id}.mp4`,
-      `${host}/vod.php?username=${u}&password=${p}&stream=${id}&extension=${ext}`
-    ];
+    inputUrl = `${host}/series/${u}/${p}/${id}.${ext}`;
   }
 
-  // On prend la première URL construite
-  const inputUrl = inputUrls[0];
-
+  // Paramètres FFmpeg pour conversion AC3/A52 B vers AAC Stéréo
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", inputUrl,
-    "-c:v", "copy",       // Inchangé : vidéo H.264
-    "-c:a", "aac",        // Convertit l'audio AC3 / A/52 B / DTS en AAC
-    "-ac", "2",           // Conversion en Stéréo
+    "-c:v", "copy",       // Copie directe de la vidéo H.264
+    "-c:a", "aac",        // Conversion audio en AAC compatible navigateurs web
+    "-ac", "2",           // Stéréo 2 canaux
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Transcoding audio to AAC via FFmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Transcoding audio to AAC`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
