@@ -18,6 +18,7 @@ export async function GET(req: Request) {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
+    // Passage explicite des identifiants pour éviter le 401 du lecteur HTML5
     const targetUrl = `${origin}/api/transcode?type=${type}&id=${id}&ext=${ext}&host=${encodeURIComponent(creds.url)}&u=${encodeURIComponent(creds.username)}&p=${encodeURIComponent(creds.password)}`;
 
     return NextResponse.redirect(targetUrl);
