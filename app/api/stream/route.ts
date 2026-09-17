@@ -1,40 +1,137 @@
 import { requireSession } from "@/lib/session";
 import { buildStreamUrl } from "@/lib/xtream/urls";
 import type { StreamKind } from "@/lib/xtream/types";
-import { NextResponse } from "next/server";
+import http from "http";
+import https from "https";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const UA = "VLC/3.0.20 LibVLC/3.0.20";
+
 export async function GET(req: Request) {
   try {
-    const creds = await requireSession();
-    const { searchParams } = new URL(req.url);
+    await requireSession();
+  } catch {
+    return new Response("Not authenticated", { status: 401 });
+  }
 
-    const type = searchParams.get("type") as StreamKind | null;
-    const id = searchParams.get("id");
-    let ext = searchParams.get("ext") || "m3u8";
+  const { searchParams } = new URL(req.url);
+  const type = searchParams.get("type") as StreamKind | null;
+  const id = searchParams.get("id");
+  let ext = searchParams.get("ext") || "";
 
-    if (!type || !id) {
-      return new Response("Missing parameters", { status: 400 });
-    }
+  if (!type || !id) return new Response("Bad request", { status: 400 });
 
-    if (type === "live") {
-      ext = "m3u8";
-    } else if (ext.toLowerCase() === "mkv") {
+  const creds = await requireSession();
+
+  // Ajustement strict des extensions selon le type de contenu
+  if (type === "live") {
+    ext = "m3u8";
+  } else {
+    // Si c'est du MKV ou vide pour les séries/films, on passe en mp4 pour HTML5
+    if (!ext || ext.toLowerCase() === "mkv") {
       ext = "mp4";
     }
-
-    const targetUrl = buildStreamUrl(creds, type, id, ext);
-
-    return NextResponse.redirect(targetUrl, {
-      status: 302,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-      },
-    });
-  } catch (err: any) {
-    return new Response(`Stream Error: ${err.message}`, { status: 500 });
   }
+
+  const targetUrl = buildStreamUrl(creds, type, id, ext);
+
+  return new Promise<Response>((resolve) => {
+    try {
+      const parsed = new URL(targetUrl);
+      const isHttps = parsed.protocol === "https:";
+      const client = isHttps ? https : http;
+
+      const headers: Record<string, string> = {
+        "User-Agent": UA,
+        Accept: "*/*",
+      };
+
+      // Propagation du header Range indispensable pour les films/séries (seek & streaming)
+      const range = req.headers.get("range");
+      if (range) headers["Range"] = range;
+
+      const proxyReq = client.request(
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || (isHttps ? 443 : 80),
+          path: parsed.pathname + parsed.search,
+          method: "GET",
+          headers,
+          rejectUnauthorized: false,
+        },
+        (upstreamRes) => {
+          // Si le serveur fournisseur renvoie une redirection interne
+          if (
+            upstreamRes.statusCode &&
+            [301, 302, 303, 307, 308].includes(upstreamRes.statusCode) &&
+            upstreamRes.headers.location
+          ) {
+            const nextUrl = new URL(upstreamRes.headers.location, targetUrl).toString();
+            return resolve(fetch(nextUrl, { headers: { "User-Agent": UA } }));
+          }
+
+          // Types MIME adaptés
+          let contentType = "video/mp4";
+          if (type === "live") {
+            contentType = "application/vnd.apple.mpegurl";
+          } else if (upstreamRes.headers["content-type"]) {
+            contentType = upstreamRes.headers["content-type"];
+          }
+
+          const respHeaders = new Headers();
+          respHeaders.set("Content-Type", contentType);
+          respHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
+          respHeaders.set("Access-Control-Allow-Origin", "*");
+          respHeaders.set("X-Accel-Buffering", "no");
+
+          if (upstreamRes.headers["content-length"]) {
+            respHeaders.set("Content-Length", upstreamRes.headers["content-length"]);
+          }
+          if (upstreamRes.headers["content-range"]) {
+            respHeaders.set("Content-Range", upstreamRes.headers["content-range"]);
+          }
+
+          const stream = new ReadableStream({
+            start(controller) {
+              upstreamRes.on("data", (chunk) => {
+                try {
+                  controller.enqueue(chunk);
+                } catch {}
+              });
+              upstreamRes.on("end", () => {
+                try {
+                  controller.close();
+                } catch {}
+              });
+              upstreamRes.on("error", () => {
+                try {
+                  controller.close();
+                } catch {}
+              });
+            },
+            cancel() {
+              upstreamRes.destroy();
+            },
+          });
+
+          resolve(
+            new Response(stream, {
+              status: upstreamRes.statusCode || 200,
+              headers: respHeaders,
+            })
+          );
+        }
+      );
+
+      proxyReq.on("error", (err) => {
+        resolve(new Response(`Stream Error: ${err.message}`, { status: 502 }));
+      });
+
+      proxyReq.end();
+    } catch (err: any) {
+      resolve(new Response(`Fatal Error: ${err.message}`, { status: 500 }));
+    }
+  });
 }
