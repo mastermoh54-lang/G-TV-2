@@ -1,4 +1,3 @@
-// app/api/stream/route.ts
 import { requireSession } from "@/lib/session";
 import { buildStreamUrl } from "@/lib/xtream/urls";
 import type { StreamKind } from "@/lib/xtream/types";
@@ -17,22 +16,17 @@ export async function GET(req: Request) {
     let ext = searchParams.get("ext") || "m3u8";
 
     if (!type || !id) {
-      return new Response("Missing type or id", { status: 400 });
+      return new Response("Missing parameters", { status: 400 });
     }
 
-    // Adaptations des extensions selon le type
     if (type === "live") {
-      ext = "m3u8"; // Force m3u8 pour HLS natif
+      ext = "m3u8";
     } else if (ext.toLowerCase() === "mkv") {
       ext = "mp4";
     }
 
-    // Construction de l'URL cible directe du serveur IPTV
     const targetUrl = buildStreamUrl(creds, type, id, ext);
 
-    // REDIRECTION 302 DIRECTE (Concept original /watch)
-    // Cela permet au navigateur / hls.js de télécharger le flux directement
-    // sans être limité par les timeouts de flux Vercel Serverless
     return NextResponse.redirect(targetUrl, {
       status: 302,
       headers: {
@@ -41,6 +35,6 @@ export async function GET(req: Request) {
       },
     });
   } catch (err: any) {
-    return new Response(`Authentication / Redirect Error: ${err.message}`, { status: 401 });
+    return new Response(`Stream Error: ${err.message}`, { status: 500 });
   }
 }
