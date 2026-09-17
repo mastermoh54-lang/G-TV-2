@@ -12,7 +12,7 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Priorité aux paramètres transmis par /api/vod pour éliminer le 401
+  // 1. Récupération prioritaire des identifiants transmis en paramètres URL
   let host = searchParams.get("host");
   let username = searchParams.get("u");
   let password = searchParams.get("p");
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
   const u = encodeURIComponent(username);
   const p = encodeURIComponent(password);
 
-  // Construction dynamique des URLs selon le type
+  // Construction de l'URL brute selon qu'il s'agisse d'un film ou d'une série
   let inputUrl = "";
   if (type === "series") {
     inputUrl = `${cleanHost}/series/${u}/${p}/${id}.${ext}`;
@@ -55,23 +55,23 @@ export async function GET(req: Request) {
     inputUrl = `${cleanHost}/movie/${u}/${p}/${id}.${ext}`;
   }
 
-  // Conversion audio Dolby AC3 / A/52 B vers AAC Stéréo
+  // Configuration FFmpeg : Copie de la vidéo + Conversion de l'audio Dolby/AC3 en AAC
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", inputUrl,
-    "-c:v", "copy",       // 0% charge CPU sur la vidéo
-    "-c:a", "aac",        // Conversion audio AAC universelle
-    "-ac", "2",
+    "-c:v", "copy",       // Copie directe de l'image (0 lag CPU)
+    "-c:a", "aac",        // Conversion audio AAC pour compatibilité web
+    "-ac", "2",           // Stéréo 2 canaux
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing via FFmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing audio via FFmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
