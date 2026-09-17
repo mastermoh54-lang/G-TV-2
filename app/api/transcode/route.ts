@@ -12,15 +12,16 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Authentification
+  // 1. Priorité aux paramètres transmis par /api/vod pour éliminer le 401
   let host = searchParams.get("host");
   let username = searchParams.get("u");
   let password = searchParams.get("p");
 
+  // Fallback sur le cookie de session si disponible
   if (!host || !username || !password) {
     try {
       const creds = await requireSession();
-      if (creds && creds.url && creds.username && creds.password) {
+      if (creds?.url && creds?.username && creds?.password) {
         host = creds.url;
         username = creds.username;
         password = creds.password;
@@ -29,24 +30,24 @@ export async function GET(req: Request) {
   }
 
   if (!host || !username || !password) {
-    console.error("[TRANSCODE] Error: Missing credentials");
-    return new Response("Missing credentials", { status: 401 });
+    console.error("[TRANSCODE] Error 401: No credentials provided");
+    return new Response("Unauthorized stream access", { status: 401 });
   }
 
-  const type = (searchParams.get("type") as StreamKind) || "series";
+  const type = (searchParams.get("type") as StreamKind) || "movie";
   const id = searchParams.get("id");
-  const ext = searchParams.get("ext") || "mp4";
+  const ext = searchParams.get("ext") || "mkv";
   const start = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
   if (!id || type === "live") {
-    return new Response("Invalid VOD parameters for transcode", { status: 400 });
+    return new Response("Invalid parameters", { status: 400 });
   }
 
   const cleanHost = String(host).replace(/\/+$/, "");
   const u = encodeURIComponent(username);
   const p = encodeURIComponent(password);
 
-  // 2. Construction de l'URL cible selon le type
+  // Construction dynamique des URLs selon le type
   let inputUrl = "";
   if (type === "series") {
     inputUrl = `${cleanHost}/series/${u}/${p}/${id}.${ext}`;
@@ -54,16 +55,16 @@ export async function GET(req: Request) {
     inputUrl = `${cleanHost}/movie/${u}/${p}/${id}.${ext}`;
   }
 
-  // 3. Traitement FFmpeg : conversion audio Dolby/AC3/DTS vers AAC Stéréo
+  // Conversion audio Dolby AC3 / A/52 B vers AAC Stéréo
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", inputUrl,
-    "-c:v", "copy",       // Vidéo intacte (aucune charge CPU)
-    "-c:a", "aac",        // Convertit l'audio en AAC pour navigateurs
-    "-ac", "2",           // Stéréo 2 canaux
+    "-c:v", "copy",       // 0% charge CPU sur la vidéo
+    "-c:a", "aac",        // Conversion audio AAC universelle
+    "-ac", "2",
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
