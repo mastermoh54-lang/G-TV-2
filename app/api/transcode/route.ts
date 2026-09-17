@@ -20,50 +20,55 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type") as StreamKind | null;
   const id = searchParams.get("id");
-  const ext = searchParams.get("ext") || "mkv";
+  const ext = searchParams.get("ext") || "mp4";
   const start = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
   if (!type || !id) return new Response("Bad request", { status: 400 });
 
-  // 1. Recherche avec l'extension demandée
-  let located = await locatePlayable(creds, type, id, ext);
+  // 1. Liste des extensions potentielles à tester chez le fournisseur
+  const candidateExts = Array.from(new Set([ext, "mp4", "mkv", "avi"]));
+  let located = null;
 
-  // 2. Fallback : Si l'extension demandée (ex: mkv) n'existe pas, tester mp4 et d'autres conteneurs
-  if (!located) {
-    const fallbackExts = ["mp4", "mkv", "avi"].filter((e) => e !== ext);
-    for (const altExt of fallbackExts) {
-      located = await locatePlayable(creds, type, id, altExt);
-      if (located) break;
+  for (const currentExt of candidateExts) {
+    try {
+      const res = await locatePlayable(creds, type, id, currentExt);
+      if (res && res.url) {
+        located = res;
+        break;
+      }
+    } catch {
+      // Poursuite de la recherche sur l'extension suivante
     }
   }
 
   if (!located) {
-    console.log(`[TRANSCODE] ${type}/${id} UNAVAILABLE (no playable container found)`);
+    console.log(`[TRANSCODE] ${type}/${id} UNAVAILABLE (no playable container)`);
     return new Response("Title unavailable from provider", { status: 404 });
   }
 
   const input = located.url;
 
+  // 2. Arguments FFmpeg optimisés pour forcer la conversion audio en AAC
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", input,
-    "-c:v", "copy", // Copie vidéo directe sans charge CPU
-    "-c:a", "aac",  // Conversion systématique vers le codec audio universel AAC
+    "-c:v", "copy", // Transmission directe du flux vidéo
+    "-c:a", "aac",  // Conversion forcée de la piste audio en AAC (compatibilité HTML5)
     "-ac", "2",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} resolved=${located.url} — remuxing via ffmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${input} — remuxing via ffmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
     const s = String(d).trim();
-    if (s) console.log(`[TRANSCODE] ${type}/${id} ffmpeg: ${s}`);
+    if (s) console.log(`[TRANSCODE] ${type}/${id} ffmpeg error: ${s}`);
   });
 
   const stream = new ReadableStream({
