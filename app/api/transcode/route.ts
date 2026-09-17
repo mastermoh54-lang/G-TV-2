@@ -25,11 +25,23 @@ export async function GET(req: Request) {
 
   if (!type || !id) return new Response("Bad request", { status: 400 });
 
-  const located = await locatePlayable(creds, type, id, ext);
+  // 1. Recherche avec l'extension demandée
+  let located = await locatePlayable(creds, type, id, ext);
+
+  // 2. Fallback : Si l'extension demandée (ex: mkv) n'existe pas, tester mp4 et d'autres conteneurs
   if (!located) {
-    console.log(`[TRANSCODE] ${type}/${id} UNAVAILABLE (no playable container)`);
+    const fallbackExts = ["mp4", "mkv", "avi"].filter((e) => e !== ext);
+    for (const altExt of fallbackExts) {
+      located = await locatePlayable(creds, type, id, altExt);
+      if (located) break;
+    }
+  }
+
+  if (!located) {
+    console.log(`[TRANSCODE] ${type}/${id} UNAVAILABLE (no playable container found)`);
     return new Response("Title unavailable from provider", { status: 404 });
   }
+
   const input = located.url;
 
   const args = [
@@ -38,15 +50,15 @@ export async function GET(req: Request) {
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", input,
-    "-c:v", "copy", // Video inchangée (aucun lag CPU)
-    "-c:a", "aac",  // Audio transcodé en AAC pour navigateurs
+    "-c:v", "copy", // Copie vidéo directe sans charge CPU
+    "-c:a", "aac",  // Conversion systématique vers le codec audio universel AAC
     "-ac", "2",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} ext=${ext} t=${start} — remuxing via ffmpeg`);
+  console.log(`[TRANSCODE] ${type}/${id} resolved=${located.url} — remuxing via ffmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
   ff.stderr.on("data", (d) => {
@@ -61,9 +73,7 @@ export async function GET(req: Request) {
           if (controller.desiredSize !== null) {
             controller.enqueue(chunk);
           }
-        } catch {
-          // Ignore disconnection error
-        }
+        } catch {}
       });
 
       ff.stdout.on("end", () => {
