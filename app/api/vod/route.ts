@@ -18,7 +18,7 @@ export async function GET(req: Request) {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
-    // On passe les identifiants directement en Query Params pour sauter le problème de cookie sur la balise vidéo HTML5
+    // Transmission explicite des identifiants pour éviter l'erreur 401
     const targetUrl = `${origin}/api/transcode?type=${type}&id=${id}&ext=${ext}&host=${encodeURIComponent(creds.url)}&u=${encodeURIComponent(creds.username)}&p=${encodeURIComponent(creds.password)}`;
 
     return NextResponse.redirect(targetUrl);
