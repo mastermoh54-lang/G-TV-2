@@ -1,8 +1,7 @@
 // app/api/transcode/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
-import { locatePlayable } from "@/lib/xtream/locate";
-import type { StreamKind, XtreamCredentials } from "@/lib/xtream/types";
+import type { StreamKind } from "@/lib/xtream/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,22 +12,23 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Récupération des identifiants (params URL ou session)
-  let creds: XtreamCredentials | null = null;
+  // 1. Récupération des identifiants (Params URL envoyés par /api/vod ou session)
+  let host = searchParams.get("host");
+  let username = searchParams.get("u");
+  let password = searchParams.get("p");
 
-  const host = searchParams.get("host");
-  const username = searchParams.get("u");
-  const password = searchParams.get("p");
-
-  if (host && username && password) {
-    creds = { url: host, username, password };
-  } else {
+  if (!host || !username || !password) {
     try {
-      creds = await requireSession();
+      const creds = await requireSession();
+      if (creds?.url && creds?.username && creds?.password) {
+        host = creds.url;
+        username = creds.username;
+        password = creds.password;
+      }
     } catch {}
   }
 
-  if (!creds || !creds.url || !creds.username || !creds.password) {
+  if (!host || !username || !password) {
     return new Response("Unauthorized stream access", { status: 401 });
   }
 
@@ -41,49 +41,32 @@ export async function GET(req: Request) {
     return new Response("Invalid VOD parameters", { status: 400 });
   }
 
-  // 2. Localisation du flux jouable (détection automatique MKV / MP4)
-  let located = null;
-  const candidateExts = Array.from(new Set([ext, "mkv", "mp4", "avi"]));
+  const cleanHost = String(host).replace(/\/+$/, "");
+  const u = encodeURIComponent(username);
+  const p = encodeURIComponent(password);
 
-  for (const currentExt of candidateExts) {
-    try {
-      const res = await locatePlayable(creds, type, id, currentExt);
-      if (res && res.url) {
-        located = res;
-        break;
-      }
-    } catch {}
-  }
+  // 2. Construction directe de l'URL Xtream brute (sans sonder)
+  const folder = type === "series" ? "series" : "movie";
+  const inputUrl = `${cleanHost}/${folder}/${u}/${p}/${id}.${ext}`;
 
-  if (!located || !located.url) {
-    return new Response("Title unavailable from provider", { status: 404 });
-  }
-
-  const input = located.url;
-
-  // 3. Commandes FFmpeg pour remuxer la vidéo et convertir l'audio en AAC
+  // 3. Traitement FFmpeg direct
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
-    "-i", input,
-    "-c:v", "copy",
-    "-c:a", "aac",
-    "-ac", "2",
+    "-i", inputUrl,
+    "-c:v", "copy",       // Vidéo intacte (0% CPU)
+    "-c:a", "aac",        // Re-encode uniquement l'audio AC3/A52 B en AAC
+    "-ac", "2",           // Stéréo
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${input} — Converting AC3 to AAC`);
+  console.log(`[TRANSCODE] Direct stream: ${inputUrl}`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-  ff.stderr.on("data", (d) => {
-    const s = String(d).trim();
-    if (s) console.log(`[TRANSCODE] ffmpeg stderr: ${s}`);
-  });
 
   const stream = new ReadableStream({
     start(controller) {
