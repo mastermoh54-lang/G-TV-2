@@ -2,6 +2,7 @@
 import { requireSession } from "@/lib/session";
 import { buildStreamUrl } from "@/lib/xtream/urls";
 import type { StreamKind } from "@/lib/xtream/types";
+import { NextResponse } from "next/server";
 import http from "http";
 import https from "https";
 
@@ -13,31 +14,31 @@ const UA = "VLC/3.0.20 LibVLC/3.0.20";
 export async function GET(req: Request) {
   try {
     const creds = await requireSession();
-    const { searchParams } = new URL(req.url);
-    
-    // Récupération sécurisée du type ("movie" ou "series")
-    let type = searchParams.get("type") as StreamKind | null;
+    const { searchParams, origin } = new URL(req.url);
+
+    const type = (searchParams.get("type") as StreamKind) || "movie";
     const id = searchParams.get("id");
-    let ext = searchParams.get("ext") || "mp4";
+    const ext = searchParams.get("ext") || "mp4";
+    const forceTranscode = searchParams.get("transcode") === "true";
 
     if (!id || type === "live") {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
-    if (!type) type = "movie";
-
-    // Si l'extension reçue est mkv ou vide, on force mp4 pour les navigateurs web
-    if (ext.toLowerCase() === "mkv" || !ext) {
-      ext = "mp4";
+    // Si transcode est demandé OU si l'extension est mkv (son AC3/DTS muet sur navigateur),
+    // redirection directe vers le service FFmpeg sur Railway pour convertir l'audio en AAC
+    if (ext.toLowerCase() === "mkv" || forceTranscode) {
+      return NextResponse.redirect(
+        `${origin}/api/transcode?type=${type}&id=${id}&ext=mkv`
+      );
     }
 
-    // Construction de l'URL brute du serveur IPTV
     const targetUrl = buildStreamUrl(creds, type, id, ext);
 
     return new Promise<Response>((resolve) => {
       const fetchWithFollow = (url: string, redirectCount = 0) => {
         if (redirectCount > 5) {
-          return resolve(new Response("Too many redirects from provider", { status: 502 }));
+          return resolve(new Response("Too many redirects", { status: 502 }));
         }
 
         const parsed = new URL(url);
@@ -62,7 +63,6 @@ export async function GET(req: Request) {
             rejectUnauthorized: false,
           },
           (upstreamRes) => {
-            // Suivi des redirections CDN Xtream (301, 302, 307)
             if (
               upstreamRes.statusCode &&
               [301, 302, 303, 307, 308].includes(upstreamRes.statusCode) &&
@@ -72,16 +72,18 @@ export async function GET(req: Request) {
               return fetchWithFollow(redirectUrl, redirectCount + 1);
             }
 
-            const respHeaders = new Headers();
-            
-            // Forcer le type vidéo adéquat pour déclencher la décodage audio MP4/AAC du navigateur
-            const contentType = upstreamRes.headers["content-type"];
-            if (!contentType || contentType.includes("octet-stream") || contentType.includes("video/x-matroska")) {
-              respHeaders.set("Content-Type", "video/mp4");
-            } else {
-              respHeaders.set("Content-Type", contentType);
+            // Détection si la source distante renvoie un conteneur Matroska/MKV
+            const contentType = upstreamRes.headers["content-type"] || "";
+            if (contentType.includes("matroska") || contentType.includes("x-mkv")) {
+              return resolve(
+                NextResponse.redirect(
+                  `${origin}/api/transcode?type=${type}&id=${id}&ext=mkv`
+                )
+              );
             }
 
+            const respHeaders = new Headers();
+            respHeaders.set("Content-Type", contentType || "video/mp4");
             respHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
             respHeaders.set("Access-Control-Allow-Origin", "*");
             respHeaders.set("Accept-Ranges", "bytes");
@@ -119,7 +121,7 @@ export async function GET(req: Request) {
           }
         );
 
-        proxyReq.on("error", (err) => resolve(new Response(`VOD Proxy Error: ${err.message}`, { status: 502 })));
+        proxyReq.on("error", (err) => resolve(new Response(`Proxy Error: ${err.message}`, { status: 502 })));
         proxyReq.end();
       };
 
