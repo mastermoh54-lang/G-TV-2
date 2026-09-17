@@ -1,17 +1,20 @@
 import { requireSession } from "@/lib/session";
 import { buildStreamUrl } from "@/lib/xtream/urls";
+import { locatePlayable } from "@/lib/xtream/locate";
 import type { StreamKind } from "@/lib/xtream/types";
-import http from "http";
-import https from "https";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const UA = "VLC/3.0.20 LibVLC/3.0.20";
+// Désactiver la vérification SSL stricte pour les serveurs Xtream en HTTPS avec certificats expirés/auto-signés
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
+const UA = "IPTVSmartersPro/3.1.5 (Linux; Android 10)";
 
 export async function GET(req: Request) {
+  let creds;
   try {
-    await requireSession();
+    creds = await requireSession();
   } catch {
     return new Response("Not authenticated", { status: 401 });
   }
@@ -19,109 +22,101 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type") as StreamKind | null;
   const id = searchParams.get("id");
-  let ext = searchParams.get("ext") || "";
+  const ext = searchParams.get("ext") || "ts";
 
-  if (!type || !id) return new Response("Bad request", { status: 400 });
-
-  const creds = await requireSession();
-
-  // Différenciation des extensions : HLS pour le Live, MP4 pour VOD
-  if (type === "live") {
-    ext = "m3u8";
-  } else {
-    if (!ext || ext.toLowerCase() === "mkv") {
-      ext = "mp4";
-    }
+  if (!type || !id || !["live", "movie", "series"].includes(type)) {
+    return new Response("Bad stream request", { status: 400 });
   }
 
-  const targetUrl = buildStreamUrl(creds, type, id, ext);
-
-  return new Promise<Response>((resolve) => {
-    try {
-      const parsed = new URL(targetUrl);
-      const isHttps = parsed.protocol === "https:";
-      const client = isHttps ? https : http;
-
-      const headers: Record<string, string> = {
-        "User-Agent": UA,
-        Accept: "*/*",
-      };
-
-      const range = req.headers.get("range");
-      if (range) headers["Range"] = range;
-
-      const proxyReq = client.request(
-        {
-          hostname: parsed.hostname,
-          port: parsed.port || (isHttps ? 443 : 80),
-          path: parsed.pathname + parsed.search,
-          method: "GET",
-          headers,
-          rejectUnauthorized: false,
-        },
-        (upstreamRes) => {
-          if (
-            upstreamRes.statusCode &&
-            [301, 302, 303, 307, 308].includes(upstreamRes.statusCode) &&
-            upstreamRes.headers.location
-          ) {
-            const nextUrl = new URL(upstreamRes.headers.location, targetUrl).toString();
-            return resolve(fetch(nextUrl, { headers: { "User-Agent": UA } }));
-          }
-
-          let contentType = "video/mp4";
-          if (type === "live") {
-            contentType = "application/vnd.apple.mpegurl";
-          } else if (upstreamRes.headers["content-type"]) {
-            contentType = upstreamRes.headers["content-type"];
-          }
-
-          const respHeaders = new Headers();
-          respHeaders.set("Content-Type", contentType);
-          respHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
-          respHeaders.set("Access-Control-Allow-Origin", "*");
-          respHeaders.set("X-Accel-Buffering", "no");
-
-          if (upstreamRes.headers["content-length"]) {
-            respHeaders.set("Content-Length", upstreamRes.headers["content-length"]);
-          }
-          if (upstreamRes.headers["content-range"]) {
-            respHeaders.set("Content-Range", upstreamRes.headers["content-range"]);
-          }
-
-          const stream = new ReadableStream({
-            start(controller) {
-              upstreamRes.on("data", (chunk) => {
-                try { controller.enqueue(chunk); } catch {}
-              });
-              upstreamRes.on("end", () => {
-                try { controller.close(); } catch {}
-              });
-              upstreamRes.on("error", () => {
-                try { controller.close(); } catch {}
-              });
-            },
-            cancel() {
-              upstreamRes.destroy();
-            },
-          });
-
-          resolve(
-            new Response(stream, {
-              status: upstreamRes.statusCode || 200,
-              headers: respHeaders,
-            })
-          );
-        }
-      );
-
-      proxyReq.on("error", (err) => {
-        resolve(new Response(`Stream Error: ${err.message}`, { status: 502 }));
+  let upstreamUrl = buildStreamUrl(creds, type, id, ext);
+  if (type !== "live") {
+    const located = await locatePlayable(creds, type, id, ext);
+    if (!located) {
+      console.log(`[STREAM] ${type}/${id} UNAVAILABLE (no playable container)`);
+      return new Response("Title unavailable from provider", {
+        status: 404,
+        headers: { "x-G-Player-unavailable": "1" },
       });
-
-      proxyReq.end();
-    } catch (err: any) {
-      resolve(new Response(`Fatal Error: ${err.message}`, { status: 500 }));
     }
+    upstreamUrl = located.url;
+  }
+
+  // Préparation des en-têtes réseau avec simulation d'un client IPTV Android
+  const headers: Record<string, string> = {
+    "User-Agent": UA,
+    "Accept": "*/*",
+    "Connection": "keep-alive",
+  };
+
+  const range = req.headers.get("range");
+  if (range) headers["Range"] = range;
+
+  const t0 = Date.now();
+  let upstream: Response;
+
+  try {
+    // Premier essai direct
+    upstream = await fetch(upstreamUrl, {
+      headers,
+      redirect: "manual", // Gérer les 302/301 manuellement pour éviter les erreurs de protocole Fetch
+      cache: "no-store",
+      signal: req.signal,
+    });
+
+    // Si le serveur Xtream renvoie une redirection (301, 302, 307, 308)
+    if ([301, 302, 307, 308].includes(upstream.status)) {
+      const redirectUrl = upstream.headers.get("location");
+      if (redirectUrl) {
+        console.log(`[STREAM] ${type}/${id} REDIRECTED to: ${redirectUrl}`);
+        upstream = await fetch(redirectUrl, {
+          headers,
+          redirect: "follow",
+          cache: "no-store",
+          signal: req.signal,
+        });
+      }
+    }
+  } catch (err) {
+    console.log(`[STREAM] ${type}/${id} PROXY FETCH FAILED after ${Date.now() - t0}ms: ${(err as Error).message}`);
+    return new Response(`Upstream fetch failed: ${(err as Error).message}`, { status: 502 });
+  }
+
+  console.log(
+    `[STREAM] ${type}/${id} PROXY status=${upstream.status} ttfb=${Date.now() - t0}ms range=${range || "none"} ct=${upstream.headers.get("content-type") || "?"}`,
+  );
+
+  if (!upstream.ok && upstream.status !== 206) {
+    return new Response(`Upstream returned ${upstream.status}`, { status: upstream.status });
+  }
+
+  const respHeaders = new Headers();
+  const passthrough = [
+    "content-type",
+    "content-length",
+    "content-range",
+    "accept-ranges",
+    "content-disposition",
+  ];
+
+  for (const h of passthrough) {
+    const v = upstream.headers.get(h);
+    if (v) respHeaders.set(h, v);
+  }
+
+  if (!respHeaders.has("content-type")) {
+    respHeaders.set("content-type", type === "live" ? "video/mp2t" : "video/mp4");
+  }
+
+  if (!respHeaders.has("accept-ranges") && type !== "live") {
+    respHeaders.set("accept-ranges", "bytes");
+  }
+
+  // Désactiver la mise en cache et autoriser CORS
+  respHeaders.set("cache-control", "no-store, no-cache, must-revalidate");
+  respHeaders.set("Access-Control-Allow-Origin", "*");
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: respHeaders,
   });
 }
