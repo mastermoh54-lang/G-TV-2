@@ -152,7 +152,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const info = movieInfo?.info || movieInfo?.movie_data || {};
   const vodData = movieInfo?.movie_data || {};
   const streamId = vodData?.stream_id || info?.stream_id || movieId;
-  const containerExt = String(vodData?.container_extension || info?.container_extension || "mp4").toLowerCase();
+  const containerExt = String(vodData?.container_extension || info?.container_extension || "mkv").toLowerCase();
 
   const movieTitle = movieInfo ? getCleanTitle(movieInfo) : "";
   const movieDurationSec = movieInfo ? getDurationInSeconds(movieInfo) : 0;
@@ -225,7 +225,8 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const backdropUrl = info?.backdrop_path?.[0] || info?.backdrop || info?.cover_big || info?.movie_image;
   const posterUrl = info?.movie_image || info?.cover_big || info?.cover;
 
-  const watchIframeUrl = `/watch?type=movie&id=${streamId}&ext=${containerExt}&title=${encodeURIComponent(movieTitle)}${posterUrl ? `&poster=${encodeURIComponent(posterUrl)}` : ""}`;
+  // Forcer l'extension mkv pour passer par le transcodeur audio FFmpeg
+  const watchIframeUrl = `/watch?type=movie&id=${streamId}&ext=${containerExt || "mkv"}&title=${encodeURIComponent(movieTitle)}${posterUrl ? `&poster=${encodeURIComponent(posterUrl)}` : ""}`;
 
   const finalTrailerKey = tmdbTrailerKey || info?.youtube_trailer || vodData?.youtube_trailer;
   const youtubeEmbedUrl = finalTrailerKey
