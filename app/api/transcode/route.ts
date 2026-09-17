@@ -1,7 +1,6 @@
-// app/api/transcode/route.ts
+// app/api/transcode/route.ts (Sur Railway)
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
-import { buildStreamUrl } from "@/lib/xtream/urls";
 import type { StreamKind } from "@/lib/xtream/types";
 
 export const runtime = "nodejs";
@@ -28,26 +27,54 @@ export async function GET(req: Request) {
     return new Response("Invalid VOD parameters for transcode", { status: 400 });
   }
 
-  // Construction directe de l'URL Xtream brute (ex: vod.php ou movie/user/pass/id.mkv)
-  const input = buildStreamUrl(creds, type, id, ext);
+  const host = creds.url.replace(/\/+$/, "");
+  const u = encodeURIComponent(creds.username);
+  const p = encodeURIComponent(creds.password);
 
-  // Conversion forcée de l'audio A/52 B (AC3 5.1) vers AAC Stéréo pour navigateurs
+  // Construction dynamique des URLs selon le type (Film vs Série)
+  let inputUrls: string[] = [];
+
+  if (type === "movie") {
+    // Les 2 formats d'URL courants chez les fournisseurs Xtream pour les films
+    inputUrls = [
+      `${host}/movie/${u}/${p}/${id}.${ext}`,
+      `${host}/vod.php?username=${u}&password=${p}&stream=${id}&extension=${ext}`,
+      `${host}/movie/${u}/${p}/${id}.mp4`
+    ];
+  } else {
+    // Format pour les séries
+    inputUrls = [
+      `${host}/series/${u}/${p}/${id}.${ext}`,
+      `${host}/series/${u}/${p}/${id}.mp4`,
+      `${host}/vod.php?username=${u}&password=${p}&stream=${id}&extension=${ext}`
+    ];
+  }
+
+  // On prend la première URL construite
+  const inputUrl = inputUrls[0];
+
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
-    "-i", input,
-    "-c:v", "copy", // Copie directe de l'image (0 lag CPU)
-    "-c:a", "aac",  // Convertit l'AC3/A52 B en AAC compatible Web
-    "-ac", "2",     // Conversion 5.1 -> 2.0 Stéréo
+    "-i", inputUrl,
+    "-c:v", "copy",       // Inchangé : vidéo H.264
+    "-c:a", "aac",        // Convertit l'audio AC3 / A/52 B / DTS en AAC
+    "-ac", "2",           // Conversion en Stéréo
+    "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] ${type}/${id} input=${input} — Converting AC3/A52 to AAC`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Transcoding audio to AAC via FFmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  ff.stderr.on("data", (d) => {
+    const s = String(d).trim();
+    if (s) console.log(`[TRANSCODE] ffmpeg stderr: ${s}`);
+  });
 
   const stream = new ReadableStream({
     start(controller) {
