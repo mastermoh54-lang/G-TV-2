@@ -13,7 +13,6 @@ import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
 
-// Composant pour charger l'image d'épisode (Xtream -> TMDB -> Fallback Cover)
 function EpisodeImage({
   ep,
   seriesTitle,
@@ -61,7 +60,6 @@ function EpisodeImage({
   );
 }
 
-// Carte d'acteur 3D Flip
 const FlipActorCard = ({ name }: { name: string }) => {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [bio, setBio] = useState<string>("Chargement...");
@@ -304,12 +302,7 @@ export default function SeriesDetailPage() {
                   <VideoPlayer
                     key={activeEpisode.id}
                     sources={[
-                      // 1. Appel prioritaire du Transcodeur FFmpeg sur Railway (Son AAC garanti)
-                      `/api/transcode?type=series&id=${activeEpisode.id}&ext=${
-                        activeEpisode.container_extension || "mkv"
-                      }`,
-                      // 2. Stream direct en fallback
-                      `/api/stream?type=series&id=${activeEpisode.id}&ext=${
+                      `/api/vod?type=series&id=${activeEpisode.id}&ext=${
                         activeEpisode.container_extension || "mp4"
                       }`,
                     ]}
@@ -369,7 +362,7 @@ export default function SeriesDetailPage() {
                   </div>
 
                   <Link
-                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} · ${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
+                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} ·${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
                     onClick={(e) => e.stopPropagation()}
                     className="p-2 text-fog-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
                     title="Lire en plein écran"
