@@ -14,16 +14,24 @@ export async function GET(req: Request) {
   try {
     const creds = await requireSession();
     const { searchParams } = new URL(req.url);
-    const type = searchParams.get("type") as StreamKind | null; // "movie" ou "series"
+    
+    // Récupération sécurisée du type ("movie" ou "series")
+    let type = searchParams.get("type") as StreamKind | null;
     const id = searchParams.get("id");
     let ext = searchParams.get("ext") || "mp4";
 
-    if (!type || !id || type === "live") {
+    if (!id || type === "live") {
       return new Response("Invalid VOD parameters", { status: 400 });
     }
 
-    // Conversion automatique MKV -> MP4
-    if (ext.toLowerCase() === "mkv" || !ext) ext = "mp4";
+    if (!type) type = "movie";
+
+    // Si l'extension reçue est mkv ou vide, on force mp4 pour les navigateurs web
+    if (ext.toLowerCase() === "mkv" || !ext) {
+      ext = "mp4";
+    }
+
+    // Construction de l'URL brute du serveur IPTV
     const targetUrl = buildStreamUrl(creds, type, id, ext);
 
     return new Promise<Response>((resolve) => {
@@ -54,7 +62,7 @@ export async function GET(req: Request) {
             rejectUnauthorized: false,
           },
           (upstreamRes) => {
-            // Suivre les redirections CDN (301/302)
+            // Suivi des redirections CDN Xtream (301, 302, 307)
             if (
               upstreamRes.statusCode &&
               [301, 302, 303, 307, 308].includes(upstreamRes.statusCode) &&
@@ -65,7 +73,15 @@ export async function GET(req: Request) {
             }
 
             const respHeaders = new Headers();
-            respHeaders.set("Content-Type", upstreamRes.headers["content-type"] || "video/mp4");
+            
+            // Forcer le type vidéo adéquat pour déclencher la décodage audio MP4/AAC du navigateur
+            const contentType = upstreamRes.headers["content-type"];
+            if (!contentType || contentType.includes("octet-stream") || contentType.includes("video/x-matroska")) {
+              respHeaders.set("Content-Type", "video/mp4");
+            } else {
+              respHeaders.set("Content-Type", contentType);
+            }
+
             respHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
             respHeaders.set("Access-Control-Allow-Origin", "*");
             respHeaders.set("Accept-Ranges", "bytes");
