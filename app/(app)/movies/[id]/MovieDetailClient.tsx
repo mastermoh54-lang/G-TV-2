@@ -112,7 +112,6 @@ const FlipActorCard = ({ name }: { name: string }) => {
 };
 
 export function MovieDetailClient({ movieId }: { movieId: string }) {
-  // --- 1. TOUS LES STATES ET HOOKS SONT DÉCLARÉS STRICTEMENT AU DÉBUT ---
   const [movieInfo, setMovieInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -150,7 +149,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
       .finally(() => setLoading(false));
   }, [movieId]);
 
-  // Extraction sécurisée des données sans conditionner les hooks
   const info = movieInfo?.info || movieInfo?.movie_data || {};
   const vodData = movieInfo?.movie_data || {};
   const streamId = vodData?.stream_id || info?.stream_id || movieId;
@@ -164,7 +162,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const isFavorite = Boolean(streamId && isFav && typeof isFav === "function" ? isFav("movie", Number(streamId)) : false);
   const tmdbId = info?.tmdb_id || vodData?.tmdb_id;
 
-  // --- 2. EFFECT TMDB PLACÉ AVANT TOUT RETURN CONDITIONNEL ---
   useEffect(() => {
     if (!movieTitle || movieTitle.toLowerCase() === "film") return;
 
@@ -201,7 +198,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     }
   };
 
-  // --- 3. SEULEMENT MAINTENANT ON PEUT FAIRE DES RETURNS CONDITIONNELS ---
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen bg-[#0b0c10]">
