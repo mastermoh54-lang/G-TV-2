@@ -12,7 +12,7 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  // 1. Récupération des identifiants (Params URL envoyés par /api/vod ou session)
+  // 1. Récupération des identifiants depuis la query string (prioritaire) ou la session
   let host = searchParams.get("host");
   let username = searchParams.get("u");
   let password = searchParams.get("p");
@@ -45,28 +45,33 @@ export async function GET(req: Request) {
   const u = encodeURIComponent(username);
   const p = encodeURIComponent(password);
 
-  // 2. Construction directe de l'URL Xtream brute (sans sonder)
+  // 2. Construction de l'URL cible selon la catégorie (Film vs Série)
   const folder = type === "series" ? "series" : "movie";
   const inputUrl = `${cleanHost}/${folder}/${u}/${p}/${id}.${ext}`;
 
-  // 3. Traitement FFmpeg direct
+  // 3. Spawne FFmpeg pour traiter le flux binaire
   const args = [
     "-hide_banner",
     "-loglevel", "error",
     "-user_agent", UA,
     ...(start > 0 ? ["-ss", String(start)] : []),
     "-i", inputUrl,
-    "-c:v", "copy",       // Vidéo intacte (0% CPU)
-    "-c:a", "aac",        // Re-encode uniquement l'audio AC3/A52 B en AAC
-    "-ac", "2",           // Stéréo
+    "-c:v", "copy",       // Inchangé : vidéo H.264
+    "-c:a", "aac",        // Convertit l'audio AC3 / A/52 B / DTS en AAC universel
+    "-ac", "2",           // Stéréo 2 canaux
     "-b:a", "192k",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof",
     "-f", "mp4",
     "pipe:1",
   ];
 
-  console.log(`[TRANSCODE] Direct stream: ${inputUrl}`);
+  console.log(`[TRANSCODE] ${type}/${id} input=${inputUrl} — Remuxing audio via FFmpeg`);
   const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  ff.stderr.on("data", (d) => {
+    const s = String(d).trim();
+    if (s) console.log(`[TRANSCODE] ffmpeg stderr: ${s}`);
+  });
 
   const stream = new ReadableStream({
     start(controller) {
