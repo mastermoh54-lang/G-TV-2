@@ -94,9 +94,9 @@ function WatchInner() {
 
   const sources = useMemo(() => {
     if (isLive) {
-      return [`/api/stream?type=live&id=${id}&ext=m3u8`];
+      return [`/api/live?id=${id}`];
     }
-    return [`/api/stream?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`];
+    return [`/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`];
   }, [isLive, mediaKind, id, ext]);
 
   const recentedRef = useRef(false);
