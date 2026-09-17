@@ -25,11 +25,10 @@ export async function GET(req: Request) {
 
   const creds = await requireSession();
 
-  // Ajustement strict des extensions selon le type de contenu
+  // Différenciation des extensions : HLS pour le Live, MP4 pour VOD
   if (type === "live") {
     ext = "m3u8";
   } else {
-    // Si c'est du MKV ou vide pour les séries/films, on passe en mp4 pour HTML5
     if (!ext || ext.toLowerCase() === "mkv") {
       ext = "mp4";
     }
@@ -48,7 +47,6 @@ export async function GET(req: Request) {
         Accept: "*/*",
       };
 
-      // Propagation du header Range indispensable pour les films/séries (seek & streaming)
       const range = req.headers.get("range");
       if (range) headers["Range"] = range;
 
@@ -62,7 +60,6 @@ export async function GET(req: Request) {
           rejectUnauthorized: false,
         },
         (upstreamRes) => {
-          // Si le serveur fournisseur renvoie une redirection interne
           if (
             upstreamRes.statusCode &&
             [301, 302, 303, 307, 308].includes(upstreamRes.statusCode) &&
@@ -72,7 +69,6 @@ export async function GET(req: Request) {
             return resolve(fetch(nextUrl, { headers: { "User-Agent": UA } }));
           }
 
-          // Types MIME adaptés
           let contentType = "video/mp4";
           if (type === "live") {
             contentType = "application/vnd.apple.mpegurl";
@@ -96,19 +92,13 @@ export async function GET(req: Request) {
           const stream = new ReadableStream({
             start(controller) {
               upstreamRes.on("data", (chunk) => {
-                try {
-                  controller.enqueue(chunk);
-                } catch {}
+                try { controller.enqueue(chunk); } catch {}
               });
               upstreamRes.on("end", () => {
-                try {
-                  controller.close();
-                } catch {}
+                try { controller.close(); } catch {}
               });
               upstreamRes.on("error", () => {
-                try {
-                  controller.close();
-                } catch {}
+                try { controller.close(); } catch {}
               });
             },
             cancel() {
