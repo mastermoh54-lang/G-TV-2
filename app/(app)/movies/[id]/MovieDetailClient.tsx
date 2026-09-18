@@ -225,6 +225,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const backdropUrl = info?.backdrop_path?.[0] || info?.backdrop || info?.cover_big || info?.movie_image;
   const posterUrl = info?.movie_image || info?.cover_big || info?.cover;
 
+  // Lien direct vers la route /watch, qui elle-même s'occupera d'appeler /api/vod de façon sécurisée
   const watchIframeUrl = `/watch?type=movie&id=${streamId}&ext=${containerExt}&title=${encodeURIComponent(movieTitle)}${posterUrl ? `&poster=${encodeURIComponent(posterUrl)}` : ""}`;
 
   const finalTrailerKey = tmdbTrailerKey || info?.youtube_trailer || vodData?.youtube_trailer;
