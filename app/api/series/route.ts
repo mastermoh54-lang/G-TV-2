@@ -1,25 +1,16 @@
 // app/api/series/route.ts
-import { spawn } from "node:child_process";
+import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const UA = "VLC/3.0.20 LibVLC/3.0.20";
-const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
-
-const NO_CACHE_HEADERS = {
-  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-  "Pragma": "no-cache",
-  "Expires": "0",
-  "Access-Control-Allow-Origin": "*",
-};
-
+// On garde juste un petit radar rapide pour vérifier si c'est MP4 ou MKV
 async function checkUrl(url: string) {
   try {
     const res = await fetch(url, {
       method: "GET",
-      headers: { "User-Agent": UA, "Range": "bytes=0-100" }
+      headers: { "Range": "bytes=0-100" } // Demande juste 100 octets pour tester
     });
     return res.ok || res.status === 206;
   } catch {
@@ -34,93 +25,43 @@ export async function GET(req: Request) {
 
     const id = searchParams.get("id");
     const originalExt = searchParams.get("ext") || "mp4";
-    const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
     if (!id) {
-      return new Response("ID manquant", { status: 400, headers: NO_CACHE_HEADERS });
+      return new Response("ID manquant", { status: 400 });
     }
 
     const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
     if (!rawHost) {
-      return new Response("URL du serveur manquante", { status: 400, headers: NO_CACHE_HEADERS });
+      return new Response("URL du serveur manquante", { status: 400 });
     }
 
     const host = String(rawHost).replace(/\/+$/, "");
     const u = encodeURIComponent(creds.username || creds.user || "");
     const p = encodeURIComponent(creds.password || creds.pass || "");
 
-    // Structure spécifique pour les séries
-    let inputUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
-    console.log(`[SERIES] 🔍 Test du lien principal : ${inputUrl}`);
+    // 1. On construit le lien direct vers ton Vercel (gmztv.vercel.app)
+    let targetUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
     
-    let isOk = await checkUrl(inputUrl);
+    // 2. On vérifie vite fait si l'épisode existe avec cette extension
+    let isOk = await checkUrl(targetUrl);
 
     if (!isOk) {
-      console.log(`[SERIES] ⚠️ Format .${originalExt} introuvable. Test des alternatives...`);
+      // Si 404, on teste les autres extensions (MKV, AVI...)
       const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
       for (const altExt of fallbacks) {
         const altUrl = `${host}/series/${u}/${p}/${id}.${altExt}`;
         if (await checkUrl(altUrl)) {
-          console.log(`[SERIES] ✅ Alternative trouvée ! On utilise : .${altExt}`);
-          inputUrl = altUrl;
-          isOk = true;
+          targetUrl = altUrl; // On a trouvé la bonne extension !
           break;
         }
       }
     }
 
-    const args = [
-      "-hide_banner",
-      "-loglevel", "error",
-      "-user_agent", UA,
-      ...(t > 0 ? ["-ss", String(t)] : []),
-      "-i", inputUrl,
-      "-c:v", "copy",
-      "-c:a", "aac",
-      "-ac", "2",
-      "-b:a", "192k",
-      "-movflags", "frag_keyframe+empty_moov+default_base_moof",
-      "-f", "mp4",
-      "pipe:1",
-    ];
+    // 3. LA MAGIE EST ICI : Au lieu de transcodage FFmpeg complexe, 
+    // on REDIRIGE ton navigateur directement vers Vercel (comme pour les films).
+    return NextResponse.redirect(targetUrl);
 
-    console.log(`[SERIES] 🚀 Lancement FFmpeg -> ${inputUrl}`);
-    const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-    ff.stderr.on("data", (d) => {
-      const s = String(d).trim();
-      if (s) console.log(`[FFMPEG-SERIES] ${s}`);
-    });
-
-    const stream = new ReadableStream({
-      start(controller) {
-        ff.stdout.on("data", (chunk) => {
-          try { if (controller.desiredSize !== null) controller.enqueue(chunk); } catch {}
-        });
-        ff.stdout.on("end", () => {
-          try { controller.close(); } catch {}
-        });
-        ff.on("error", (err) => {
-          try { controller.error(err); } catch {}
-        });
-      },
-      cancel() {
-        if (!ff.killed) ff.kill("SIGKILL");
-      },
-    });
-
-    req.signal.addEventListener("abort", () => {
-      if (!ff.killed) ff.kill("SIGKILL");
-    });
-
-    return new Response(stream, {
-      headers: {
-        "content-type": "video/mp4",
-        ...NO_CACHE_HEADERS,
-      },
-    });
   } catch (err: any) {
-    console.error("[SERIES] Crash total :", err);
-    return new Response(`Erreur SERIES: ${err.message}`, { status: 500, headers: NO_CACHE_HEADERS });
+    return new Response(`Erreur SERIES: ${err.message}`, { status: 500 });
   }
 }
