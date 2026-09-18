@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    let tmdbId = searchParams.get("tmdbId");
-    let title = searchParams.get("title") || "";
+    const tmdbId = searchParams.get("tmdbId");
+    const title = searchParams.get("title") || "";
     const type = searchParams.get("type") || "tv"; 
 
     const TMDB_KEY = process.env.TMDB_API_KEY;
@@ -12,61 +12,59 @@ export async function GET(req: Request) {
 
     if (!TMDB_KEY) return NextResponse.json({ logoUrl: null });
 
-    // NETTOYAGE INTELLIGENT DU TITRE
+    // NETTOYAGE ULTRA-AGRESSIF DU TITRE (Enlève |MULTI|, [FR], (2026), Saison 1...)
     const cleanTitle = title
       .replace(/\|.*?\|/g, "")
       .replace(/\[.*?\]/g, "")
-      .replace(/\(\d{4}\)/g, "")
+      .replace(/\(.*?\)/g, "")
+      .replace(/Saison \d+/gi, "")
+      .replace(/Season \d+/gi, "")
       .trim();
 
-    let isTmdbIdValid = false;
-    let tvdbId = null;
+    let finalTmdbId = null;
+    let finalTvdbId = null;
 
-    // 1. VÉRIFIER LE TMDB_ID (Les fournisseurs IPTV envoient souvent de faux IDs pour les séries)
+    // 1. TESTER L'ID FOURNI PAR L'IPTV (On vérifie s'il existe vraiment)
     if (tmdbId && tmdbId !== "0" && tmdbId !== "null" && tmdbId !== "") {
-      // On teste l'ID pour voir s'il existe vraiment chez TMDB
       const verifyRes = await fetch(`https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${TMDB_KEY}`);
       if (verifyRes.ok) {
-        isTmdbIdValid = true;
-        if (type === "tv") {
-          const extData = await verifyRes.json();
-          tvdbId = extData.tvdb_id; // Vital pour Fanart
+        const extData = await verifyRes.json();
+        finalTmdbId = tmdbId; // L'ID est valide !
+        if (type === "tv" && extData.tvdb_id) {
+          finalTvdbId = extData.tvdb_id.toString(); // Traduction pour Fanart
         }
       }
     }
 
-    // 2. RECHERCHE DE SECOURS (Si l'ID fourni par l'IPTV était faux ou manquant)
-    if (!isTmdbIdValid && cleanTitle) {
+    // 2. RECHERCHE DE SECOURS VIA LE TITRE PURIFIÉ
+    if (!finalTmdbId && cleanTitle) {
       const searchRes = await fetch(`https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}`);
       if (searchRes.ok) {
         const searchData = await searchRes.json();
         if (searchData.results && searchData.results.length > 0) {
-          tmdbId = searchData.results[0].id.toString();
+          finalTmdbId = searchData.results[0].id.toString();
           
-          // Si c'est une série, on récupère le TVDB_ID pour Fanart
           if (type === "tv") {
-            const extRes = await fetch(`https://api.themoviedb.org/3/tv/${tmdbId}/external_ids?api_key=${TMDB_KEY}`);
+            const extRes = await fetch(`https://api.themoviedb.org/3/tv/${finalTmdbId}/external_ids?api_key=${TMDB_KEY}`);
             if (extRes.ok) {
               const extData = await extRes.json();
-              tvdbId = extData.tvdb_id;
+              if (extData.tvdb_id) finalTvdbId = extData.tvdb_id.toString();
             }
           }
         }
       }
     }
 
-    // Si on a toujours aucun ID valide, on abandonne
-    if (!tmdbId || tmdbId === "0") return NextResponse.json({ logoUrl: null });
+    if (!finalTmdbId) return NextResponse.json({ logoUrl: null });
 
-    // 3. TENTATIVE VIA FANART.TV
+    // 3. TENTATIVE FANART (La priorité absolue)
     if (FANART_KEY) {
       try {
-        // Pour les séries, Fanart EXIGE le TVDB ID. Si on ne l'a pas, on ignore Fanart.
-        if (type === "movie" || (type === "tv" && tvdbId)) {
-          const fanartUrl = type === "movie"
-            ? `https://webservice.fanart.tv/v3/movies/${tmdbId}?api_key=${FANART_KEY}`
-            : `https://webservice.fanart.tv/v3/tv/${tvdbId}?api_key=${FANART_KEY}`;
+        const fanartUrl = type === "movie"
+          ? `https://webservice.fanart.tv/v3/movies/${finalTmdbId}?api_key=${FANART_KEY}`
+          : (finalTvdbId ? `https://webservice.fanart.tv/v3/tv/${finalTvdbId}?api_key=${FANART_KEY}` : null);
 
+        if (fanartUrl) {
           const fanartRes = await fetch(fanartUrl);
           if (fanartRes.ok) {
             const fanartData = await fanartRes.json();
@@ -78,19 +76,17 @@ export async function GET(req: Request) {
               const bestLogo = logos.find((l: any) => l.lang === 'fr') 
                             || logos.find((l: any) => l.lang === 'en') 
                             || logos[0];
-              if (bestLogo?.url) {
-                return NextResponse.json({ logoUrl: bestLogo.url });
-              }
+              if (bestLogo?.url) return NextResponse.json({ logoUrl: bestLogo.url });
             }
           }
         }
       } catch (e) {
-        // Échec Fanart, on continue silencieusement
+        // Ne rien faire, Fanart échoue, on passe au plan B
       }
     }
 
-    // 4. PLAN B : VIA THEMOVIEDB
-    const tmdbUrl = `https://api.themoviedb.org/3/${type}/${tmdbId}/images?api_key=${TMDB_KEY}&include_image_language=fr,en,null`;
+    // 4. PLAN B : THEMOVIEDB (TMDB)
+    const tmdbUrl = `https://api.themoviedb.org/3/${type}/${finalTmdbId}/images?api_key=${TMDB_KEY}&include_image_language=en,fr,null`;
     const tmdbRes = await fetch(tmdbUrl);
     
     if (tmdbRes.ok) {
