@@ -118,6 +118,9 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [activeMedia, setActiveMedia] = useState<"movie" | "trailer" | null>(null);
   const [currentLang, setCurrentLang] = useState("fr");
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
+  
+  // ÉTAT POUR LE LOGO
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const { isFav, toggleFav } = useLibrary();
@@ -162,6 +165,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const isFavorite = Boolean(streamId && isFav && typeof isFav === "function" ? isFav("movie", Number(streamId)) : false);
   const tmdbId = info?.tmdb_id || vodData?.tmdb_id;
 
+  // RECHERCHE DU TRAILER
   useEffect(() => {
     if (!movieTitle || movieTitle.toLowerCase() === "film") return;
 
@@ -180,6 +184,21 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     fetchTmdbTrailer();
     return () => { isMounted = false; };
   }, [movieTitle, year, tmdbId, currentLang]);
+
+  // RECHERCHE DU LOGO TMDB
+  useEffect(() => {
+    if (!tmdbId) return;
+
+    let isMounted = true;
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&type=movie`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
+      })
+      .catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [tmdbId]);
 
   const handleFullscreen = async () => {
     const elem = playerContainerRef.current;
@@ -225,7 +244,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const backdropUrl = info?.backdrop_path?.[0] || info?.backdrop || info?.cover_big || info?.movie_image;
   const posterUrl = info?.movie_image || info?.cover_big || info?.cover;
 
-  // Lien direct vers la route /watch, qui elle-même s'occupera d'appeler /api/vod de façon sécurisée
   const watchIframeUrl = `/watch?type=movie&id=${streamId}&ext=${containerExt}&title=${encodeURIComponent(movieTitle)}${posterUrl ? `&poster=${encodeURIComponent(posterUrl)}` : ""}`;
 
   const finalTrailerKey = tmdbTrailerKey || info?.youtube_trailer || vodData?.youtube_trailer;
@@ -289,9 +307,18 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
           )}
 
           <div className="space-y-2 sm:space-y-3 flex-1">
-            <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">
-              {movieTitle}
-            </h1>
+            {/* AFFICHAGE CONDITIONNEL DU LOGO OU DU TITRE */}
+            {logoUrl ? (
+              <img 
+                src={logoUrl} 
+                alt={movieTitle} 
+                className="h-16 sm:h-24 md:h-28 object-contain mb-2 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
+              />
+            ) : (
+              <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">
+                {movieTitle}
+              </h1>
+            )}
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400 font-medium">
               {rating > 0 && (
