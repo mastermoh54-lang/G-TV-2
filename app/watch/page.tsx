@@ -96,7 +96,7 @@ function WatchInner() {
     }
     
     if (mediaKind === "series") {
-      return [`/api/series?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
+      return [`/api/episode?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
     }
     
     return [
