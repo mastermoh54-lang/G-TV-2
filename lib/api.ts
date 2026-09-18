@@ -72,49 +72,22 @@ export const api = {
   // epg (decoded)
   epg: (streamId: string | number, limit = 8) =>
     getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
-
-  // free TV (public iptv-org lists)
-  freeTvCategories: () =>
-    getJson<{ categories: Array<{ id: string; name: string }> }>("/api/freetv?list=categories"),
-  freeTvCountries: () =>
-    getJson<{ countries: Array<{ id: string; name: string }> }>("/api/freetv?list=countries"),
-  freeTvChannels: (mode: "cat" | "country", value: string) =>
-    getJson<{ channels: FreeChannel[] }>(
-      `/api/freetv?${mode === "country" ? "country" : "category"}=${encodeURIComponent(value)}`,
-    ),
 };
 
-export interface FreeChannel {
-  id: string;
-  name: string;
-  logo: string;
-  group: string;
-  url: string;
-}
-
-/** Same-origin HLS player URL for a public free-TV stream. */
-export function freeTvSrc(m3u8Url: string): string {
-  return `/api/hls?u=${encodeURIComponent(m3u8Url)}`;
-}
-
-/** Same-origin proxied media URL (used for live, and as a VOD fallback). */
+/** Same-origin proxied media URL (used for live). */
 export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
   return `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
 }
 
-// ❌ J'ai retiré ici la fonction 'transcodeSrc' qui ne sert plus à rien et causait la confusion.
-
 /** 
- * LA CORRECTION EST ICI : 
- * Le blocage des requêtes fantômes vers transcode et resolve pour laisser 
- * nos nouvelles API (/api/show et /api/vod) gérer la lecture proprement.
+ * BOUCLIER ANTI-REQUETES FANTOMES : 
+ * Court-circuite l'ancienne logique pour laisser /api/show et /api/vod gérer la lecture.
  */
 export async function resolveSrc(
   kind: StreamKind,
   id: string | number,
   ext: string,
 ): Promise<{ url: string | null; directOk: boolean; ext: string }> {
-  // On renvoie juste un objet vide pour que le lecteur passe la main à nos routes API
   return { url: null, directOk: true, ext };
 }
 
