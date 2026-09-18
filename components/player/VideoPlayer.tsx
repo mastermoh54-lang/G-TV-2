@@ -76,7 +76,7 @@ export function VideoPlayer({
   const [scrub, setScrub] = useState<number | null>(null);
 
   const rawSrc = sources[srcIdx] ?? sources[0];
-  // Identifie /api/vod comme transcodé pour gérer l'avance rapide (seek)
+  // Identifie la route comme "transcodée" pour éviter de casser l'avance rapide (seek)
   const isTranscode = !!rawSrc && (rawSrc.includes("/api/transcode") || rawSrc.includes("/api/vod"));
   const src = isTranscode && seekBase > 0 ? `${rawSrc}&t=${Math.floor(seekBase)}` : rawSrc;
   const seekable = !isLive;
