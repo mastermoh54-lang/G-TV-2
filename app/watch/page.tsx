@@ -92,18 +92,18 @@ function WatchInner() {
 
   const mediaKind = type as StreamKind;
 
-  // Multi-sources pour garantir le son
+  // Ordre prioritaire : Transcodeur audio en premier pour garantir le son AAC sur la VOD
   const sources = useMemo(() => {
     if (isLive) {
       return [`/api/live?id=${id}`];
     }
     return [
-      // 1. Direct Stream VOD
+      // 1. Transcodeur FFmpeg sur Railway (Son AAC garanti)
+      `/api/transcode?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(extParam || ext || "mkv")}`,
+      // 2. Flux VOD direct en fallback
       `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`,
-      // 2. Transcodeur FFmpeg avec conversion audio AAC si le son natif AC3 n'est pas supporté
-      `/api/transcode?type=${mediaKind}&id=${id}&ext=mkv`,
     ];
-  }, [isLive, mediaKind, id, ext]);
+  }, [isLive, mediaKind, id, ext, extParam]);
 
   const recentedRef = useRef(false);
   if (type === "live" && !recentedRef.current && id) {
