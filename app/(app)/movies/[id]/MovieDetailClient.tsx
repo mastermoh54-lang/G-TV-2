@@ -12,8 +12,10 @@ function getCleanTitle(data: any): string {
   const info = data?.info || {};
   const vod = data?.movie_data || {};
   const rawTitle = info.name || vod.name || info.title || vod.title || info.o_name || "Film";
-  // Cette ligne supprime (2026), (2019) à la fin des titres de films
-  const cleaned = String(rawTitle).replace(/\s*\(\d{4}\)\s*$/g, "").trim();
+  const cleaned = String(rawTitle)
+    .replace(/\s*\(\d{4}\)\s*$/g, "")
+    .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "")
+    .trim();
   return cleaned ? cleanName(cleaned) : "Film";
 }
 
@@ -63,9 +65,7 @@ const FlipActorCard = ({ name }: { name: string }) => {
       .catch(() => {
         if (isMounted) setBio("Information non disponible.");
       });
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [name]);
 
   return (
@@ -80,18 +80,12 @@ const FlipActorCard = ({ name }: { name: string }) => {
       }}
       className="group perspective w-24 sm:w-28 h-36 sm:h-40 flex-shrink-0 cursor-pointer select-none focus:outline-none"
     >
-      <div
-        className={`relative w-full h-full rounded-xl transition-transform duration-500 transform-style-3d ${
-          isFlipped ? "rotate-y-180" : "group-hover:scale-105"
-        }`}
-      >
+      <div className={`relative w-full h-full rounded-xl transition-transform duration-500 transform-style-3d ${isFlipped ? "rotate-y-180" : "group-hover:scale-105"}`}>
         <div className="absolute inset-0 w-full h-full rounded-xl overflow-hidden bg-[#181a24] border border-white/10 shadow-lg backface-hidden flex flex-col justify-end">
           {photoUrl ? (
             <img src={photoUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400">
-              <User className="w-6 h-6" />
-            </div>
+            <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400"><User className="w-6 h-6" /></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
           <div className="relative z-10 p-1.5 flex items-center justify-between">
@@ -99,7 +93,6 @@ const FlipActorCard = ({ name }: { name: string }) => {
             <Info className="w-2.5 h-2.5 text-indigo-400 opacity-70 flex-shrink-0" />
           </div>
         </div>
-
         <div className="absolute inset-0 w-full h-full rounded-xl p-2 bg-gradient-to-br from-indigo-950 to-[#12141c] border border-indigo-500/40 text-white backface-hidden rotate-y-180 flex flex-col justify-between shadow-xl">
           <div className="space-y-0.5 overflow-hidden">
             <p className="text-[9px] font-bold text-indigo-300 line-clamp-1">{name}</p>
@@ -119,36 +112,25 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [activeMedia, setActiveMedia] = useState<"movie" | "trailer" | null>(null);
   const [currentLang, setCurrentLang] = useState("fr");
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
+  
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoLoading, setLogoLoading] = useState<boolean>(true); // NOUVEAU
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const { isFav, toggleFav } = useLibrary();
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedLang = localStorage.getItem("app_lang") || localStorage.getItem("language") || "fr";
-      setCurrentLang(savedLang);
-    }
+    if (typeof window !== "undefined") setCurrentLang(localStorage.getItem("app_lang") || "fr");
   }, []);
 
   useEffect(() => {
     if (!movieId) return;
     setLoading(true);
     setError(false);
-    api
-      .vodInfo(movieId)
-      .then((data) => {
-        if (data) {
-          setMovieInfo(data);
-        } else {
-          setError(true);
-        }
-      })
-      .catch((err) => {
-        console.error("Erreur API vodInfo:", err);
-        setError(true);
-      })
-      .finally(() => setLoading(false));
+    api.vodInfo(movieId).then((data) => {
+      if (data) setMovieInfo(data);
+      else setError(true);
+    }).catch(() => setError(true)).finally(() => setLoading(false));
   }, [movieId]);
 
   const info = movieInfo?.info || movieInfo?.movie_data || {};
@@ -158,45 +140,40 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
 
   const movieTitle = movieInfo ? getCleanTitle(movieInfo) : "";
   const movieDurationSec = movieInfo ? getDurationInSeconds(movieInfo) : 0;
-
   const rating = info?.rating ? ratingNum(info.rating) : 0;
   const year = yearFrom(info?.releasedate || vodData?.releasedate, movieTitle);
   const isFavorite = Boolean(streamId && isFav && typeof isFav === "function" ? isFav("movie", Number(streamId)) : false);
   const tmdbId = info?.tmdb_id || vodData?.tmdb_id;
 
-  // RECHERCHE DU TRAILER
   useEffect(() => {
     if (!movieTitle || movieTitle.toLowerCase() === "film") return;
-
     let isMounted = true;
-    const fetchTmdbTrailer = async () => {
-      try {
-        const res = await fetch(
-          `/api/tmdb-trailer?title=${encodeURIComponent(movieTitle)}&year=${year || ""}&tmdbId=${tmdbId || ""}&lang=${currentLang}`
-        );
-        const data = await res.json();
-        if (isMounted && data?.key) setTmdbTrailerKey(data.key);
-      } catch (err) {
-        console.error("Erreur TMDB trailer:", err);
-      }
-    };
-    fetchTmdbTrailer();
+    fetch(`/api/tmdb-trailer?title=${encodeURIComponent(movieTitle)}&year=${year || ""}&tmdbId=${tmdbId || ""}&lang=${currentLang}`)
+      .then((res) => res.json())
+      .then((data) => { if (isMounted && data?.key) setTmdbTrailerKey(data.key); })
+      .catch(() => {});
     return () => { isMounted = false; };
   }, [movieTitle, year, tmdbId, currentLang]);
 
-  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE NETTOYÉ
   useEffect(() => {
     const idToSearch = tmdbId || "";
     const titleToSearch = movieTitle || "";
-    if (!idToSearch && !titleToSearch) return;
+    if (!idToSearch && !titleToSearch) {
+      setLogoLoading(false);
+      return;
+    }
 
     let isMounted = true;
+    setLogoLoading(true);
     fetch(`/api/tmdb-logo?tmdbId=${idToSearch}&title=${encodeURIComponent(titleToSearch)}&type=movie`)
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
+        if (isMounted) {
+          if (data?.logoUrl) setLogoUrl(data.logoUrl);
+          setLogoLoading(false);
+        }
       })
-      .catch(() => {});
+      .catch(() => { if (isMounted) setLogoLoading(false); });
 
     return () => { isMounted = false; };
   }, [tmdbId, movieTitle]);
@@ -205,52 +182,22 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     const elem = playerContainerRef.current;
     if (!elem) return;
     try {
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
-      } else if ((elem as any).webkitRequestFullscreen) {
-        await (elem as any).webkitRequestFullscreen();
-      }
-      if (window.screen?.orientation && "lock" in window.screen.orientation) {
-        await (window.screen.orientation as any).lock("landscape").catch(() => {});
-      }
-    } catch (err) {
-      console.error("Erreur Plein Écran:", err);
-    }
+      if (elem.requestFullscreen) await elem.requestFullscreen();
+      else if ((elem as any).webkitRequestFullscreen) await (elem as any).webkitRequestFullscreen();
+      if (window.screen?.orientation && "lock" in window.screen.orientation) await (window.screen.orientation as any).lock("landscape").catch(() => {});
+    } catch (err) {}
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-[#0b0c10]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
-  }
-
-  if (error || !movieInfo) {
-    return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0b0c10] text-white space-y-4">
-        <p className="text-red-400 font-semibold">Impossible de charger les informations du film.</p>
-        <Link href="/movies" className="px-4 py-2 bg-indigo-600 rounded-lg text-xs hover:bg-indigo-500 transition-colors">
-          Retour aux films
-        </Link>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex justify-center items-center min-h-screen bg-[#0b0c10]"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div></div>;
+  if (error || !movieInfo) return <div className="flex flex-col justify-center items-center min-h-screen bg-[#0b0c10] text-white space-y-4"><p className="text-red-400 font-semibold">Impossible de charger les informations du film.</p><Link href="/movies" className="px-4 py-2 bg-indigo-600 rounded-lg text-xs hover:bg-indigo-500 transition-colors">Retour aux films</Link></div>;
 
   const rawCast = info?.cast || vodData?.cast || info?.actors || "";
-  const castList = typeof rawCast === "string"
-    ? rawCast.split(",").map((actor: string) => actor.trim()).filter(Boolean)
-    : Array.isArray(rawCast) ? rawCast : [];
-
+  const castList = typeof rawCast === "string" ? rawCast.split(",").map((a: string) => a.trim()).filter(Boolean) : Array.isArray(rawCast) ? rawCast : [];
   const backdropUrl = info?.backdrop_path?.[0] || info?.backdrop || info?.cover_big || info?.movie_image;
   const posterUrl = info?.movie_image || info?.cover_big || info?.cover;
-
   const watchIframeUrl = `/watch?type=movie&id=${streamId}&ext=${containerExt}&title=${encodeURIComponent(movieTitle)}${posterUrl ? `&poster=${encodeURIComponent(posterUrl)}` : ""}`;
-
   const finalTrailerKey = tmdbTrailerKey || info?.youtube_trailer || vodData?.youtube_trailer;
-  const youtubeEmbedUrl = finalTrailerKey
-    ? `https://www.youtube-nocookie.com/embed/${finalTrailerKey}?autoplay=1&rel=0`
-    : `https://www.youtube-nocookie.com/embed?listType=search&list=${encodeURIComponent(`${movieTitle} bande annonce`)}&autoplay=1`;
+  const youtubeEmbedUrl = finalTrailerKey ? `https://www.youtube-nocookie.com/embed/${finalTrailerKey}?autoplay=1&rel=0` : `https://www.youtube-nocookie.com/embed?listType=search&list=${encodeURIComponent(`${movieTitle} bande annonce`)}&autoplay=1`;
 
   return (
     <div className="min-h-screen bg-[#0b0c10] text-zinc-100 p-3 sm:p-6 space-y-4 sm:space-y-6">
@@ -261,34 +208,11 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
         .rotate-y-180 { transform: rotateY(180deg); }
       `}</style>
 
-      {/* Top Bar */}
       <div className="flex items-center justify-between">
-        <Link
-          href="/movies"
-          className="inline-flex items-center gap-2 text-xs text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
-        </Link>
-        <button
-          onClick={() => {
-            if (toggleFav) {
-              toggleFav("movie", {
-                id: Number(streamId),
-                name: movieTitle,
-                poster: posterUrl,
-                ext: containerExt,
-              });
-            }
-          }}
-          className={`p-2 rounded-full border border-white/10 backdrop-blur-md transition-colors ${
-            isFavorite ? "bg-rose-500/20 text-rose-500 border-rose-500/30" : "bg-white/5 text-zinc-400 hover:text-white"
-          }`}
-        >
-          <Heart className={`w-4 h-4 ${isFavorite ? "fill-current" : ""}`} />
-        </button>
+        <Link href="/movies" className="inline-flex items-center gap-2 text-xs text-zinc-400 hover:text-white transition-colors"><ArrowLeft className="w-3.5 h-3.5" /> Back</Link>
+        <button onClick={() => { if (toggleFav) toggleFav("movie", { id: Number(streamId), name: movieTitle, poster: posterUrl, ext: containerExt }); }} className={`p-2 rounded-full border border-white/10 backdrop-blur-md transition-colors ${isFavorite ? "bg-rose-500/20 text-rose-500 border-rose-500/30" : "bg-white/5 text-zinc-400 hover:text-white"}`}><Heart className={`w-4 h-4 ${isFavorite ? "fill-current" : ""}`} /></button>
       </div>
 
-      {/* Hero Banner */}
       <div className={`relative rounded-2xl overflow-hidden bg-[#12141c] border border-white/5 min-h-[200px] sm:min-h-[240px] flex items-end p-4 sm:p-6 ${activeMedia ? "hidden sm:flex" : "flex"}`}>
         {backdropUrl && (
           <div className="absolute inset-0 z-0">
@@ -299,147 +223,61 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
         )}
 
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 w-full">
-          {posterUrl && (
-            <img
-              src={posterUrl}
-              alt={movieTitle}
-              className="w-28 sm:w-36 aspect-[2/3] object-cover rounded-xl shadow-2xl border border-white/10 flex-shrink-0"
-            />
-          )}
-
+          {posterUrl && <img src={posterUrl} alt={movieTitle} className="w-28 sm:w-36 aspect-[2/3] object-cover rounded-xl shadow-2xl border border-white/10 flex-shrink-0" />}
           <div className="space-y-2 sm:space-y-3 flex-1">
-            {/* AFFICHAGE CONDITIONNEL DU LOGO OU DU TITRE */}
-            {logoUrl ? (
-              <img 
-                src={logoUrl} 
-                alt={movieTitle} 
-                className="h-16 sm:h-24 md:h-28 object-contain mb-2 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
-              />
+            
+            {/* GESTION INTELLIGENTE DU LOGO : SKELETON -> LOGO OU TEXTE */}
+            {logoLoading ? (
+              <div className="h-16 sm:h-24 md:h-28 w-48 sm:w-64 bg-white/10 animate-pulse rounded-xl mb-2" />
+            ) : logoUrl ? (
+              <img src={logoUrl} alt={movieTitle} className="h-16 sm:h-24 md:h-28 object-contain mb-2 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
             ) : (
-              <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">
-                {movieTitle}
-              </h1>
+              <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">{movieTitle}</h1>
             )}
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400 font-medium">
-              {rating > 0 && (
-                <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold">
-                  <Star className="w-3 h-3 fill-current" /> {rating.toFixed(1)}
-                </span>
-              )}
-              {year && (
-                <span className="bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
-                  {year}
-                </span>
-              )}
+              {rating > 0 && <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold"><Star className="w-3 h-3 fill-current" /> {rating.toFixed(1)}</span>}
+              {year && <span className="bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">{year}</span>}
               {info?.genre && <span className="text-zinc-400">• {info.genre}</span>}
-              {movieDurationSec > 0 && (
-                <span className="flex items-center gap-1 text-zinc-400">
-                  <Clock className="w-3 h-3" /> {Math.floor(movieDurationSec / 60)} min
-                </span>
-              )}
+              {movieDurationSec > 0 && <span className="flex items-center gap-1 text-zinc-400"><Clock className="w-3 h-3" /> {Math.floor(movieDurationSec / 60)} min</span>}
             </div>
 
             {!activeMedia && (
               <div className="flex items-center gap-3 pt-2">
-                <button
-                  onClick={() => setActiveMedia("movie")}
-                  className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"
-                >
-                  <Play className="w-4 h-4 fill-current translate-x-0.5" />
-                  Play
-                </button>
-
-                <button
-                  onClick={() => setActiveMedia("trailer")}
-                  className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs px-4 py-2.5 rounded-xl border border-white/10 transition-all hover:scale-105"
-                >
-                  <Video className="w-4 h-4 text-red-500 fill-current" />
-                  Bande-annonce
-                </button>
+                <button onClick={() => setActiveMedia("movie")} className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-105"><Play className="w-4 h-4 fill-current translate-x-0.5" /> Play</button>
+                <button onClick={() => setActiveMedia("trailer")} className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs px-4 py-2.5 rounded-xl border border-white/10 transition-all hover:scale-105"><Video className="w-4 h-4 text-red-500 fill-current" /> Bande-annonce</button>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
         {activeMedia && (
           <div className="lg:col-span-5 space-y-2 bg-[#12141c] border border-white/10 rounded-2xl p-2.5 sm:p-4 sticky top-2 sm:top-6 shadow-2xl z-30">
             <div className="flex items-center justify-between px-1">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-indigo-400 truncate max-w-[70%]">
-                {activeMedia === "trailer" ? `Bande-annonce : ${movieTitle}` : movieTitle}
-              </h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-indigo-400 truncate max-w-[70%]">{activeMedia === "trailer" ? `Bande-annonce : ${movieTitle}` : movieTitle}</h2>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={handleFullscreen}
-                  className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
-                  title="Plein Écran"
-                >
-                  <Maximize className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setActiveMedia(null)}
-                  className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
-                  title="Fermer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <button onClick={handleFullscreen} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors" title="Plein Écran"><Maximize className="w-4 h-4" /></button>
+                <button onClick={() => setActiveMedia(null)} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors" title="Fermer"><X className="w-4 h-4" /></button>
               </div>
             </div>
-
-            <div
-              ref={playerContainerRef}
-              className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5"
-            >
-              {activeMedia === "movie" ? (
-                <iframe
-                  src={watchIframeUrl}
-                  className="w-full h-full border-0"
-                  allow="autoplay; fullscreen; picture-in-picture; encrypted-media; volume"
-                  allowFullScreen
-                />
-              ) : (
-                <iframe
-                  src={youtubeEmbedUrl}
-                  title={`Bande-annonce ${movieTitle}`}
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              )}
+            <div ref={playerContainerRef} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5">
+              {activeMedia === "movie" ? <iframe src={watchIframeUrl} className="w-full h-full border-0" allow="autoplay; fullscreen; picture-in-picture; encrypted-media; volume" allowFullScreen /> : <iframe src={youtubeEmbedUrl} title={`Bande-annonce ${movieTitle}`} className="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />}
             </div>
           </div>
         )}
 
-        {/* Synopsis & Section Casting 3D */}
         <div className={activeMedia ? "lg:col-span-7 space-y-4" : "lg:col-span-12 space-y-4"}>
           <div className="bg-[#12141c] border border-white/5 rounded-2xl p-4 sm:p-6 space-y-3">
-            <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Film className="w-4 h-4 text-indigo-400" /> Synopsis & Histoire
-            </h3>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              {info?.plot || info?.description || "Aucun résumé disponible."}
-            </p>
-            {info?.director && (
-              <div className="pt-2 border-t border-white/5 text-xs text-zinc-400">
-                <span className="text-zinc-500 font-semibold">Réalisateur : </span>
-                <span className="text-zinc-200">{info.director}</span>
-              </div>
-            )}
+            <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2"><Film className="w-4 h-4 text-indigo-400" /> Synopsis & Histoire</h3>
+            <p className="text-xs text-zinc-300 leading-relaxed">{info?.plot || info?.description || "Aucun résumé disponible."}</p>
+            {info?.director && <div className="pt-2 border-t border-white/5 text-xs text-zinc-400"><span className="text-zinc-500 font-semibold">Réalisateur : </span><span className="text-zinc-200">{info.director}</span></div>}
           </div>
-
           {castList.length > 0 && (
             <div className="bg-[#12141c] border border-white/5 rounded-2xl p-4 sm:p-6 space-y-3">
-              <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <User className="w-4 h-4 text-indigo-400" /> Casting / Acteurs
-              </h3>
-              <div className="flex flex-wrap gap-2.5 pt-1">
-                {castList.slice(0, 10).map((actor: string, idx: number) => (
-                  <FlipActorCard key={idx} name={actor} />
-                ))}
-              </div>
+              <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2"><User className="w-4 h-4 text-indigo-400" /> Casting / Acteurs</h3>
+              <div className="flex flex-wrap gap-2.5 pt-1">{castList.slice(0, 10).map((actor: string, idx: number) => <FlipActorCard key={idx} name={actor} />)}</div>
             </div>
           )}
         </div>
