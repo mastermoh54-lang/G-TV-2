@@ -12,6 +12,7 @@ function getCleanTitle(data: any): string {
   const info = data?.info || {};
   const vod = data?.movie_data || {};
   const rawTitle = info.name || vod.name || info.title || vod.title || info.o_name || "Film";
+  // Cette ligne supprime (2026), (2019) à la fin des titres de films
   const cleaned = String(rawTitle).replace(/\s*\(\d{4}\)\s*$/g, "").trim();
   return cleaned ? cleanName(cleaned) : "Film";
 }
@@ -183,7 +184,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     return () => { isMounted = false; };
   }, [movieTitle, year, tmdbId, currentLang]);
 
-  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE
+  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE NETTOYÉ
   useEffect(() => {
     const idToSearch = tmdbId || "";
     const titleToSearch = movieTitle || "";
