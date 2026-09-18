@@ -113,8 +113,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [currentLang, setCurrentLang] = useState("fr");
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
   
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [logoLoading, setLogoLoading] = useState<boolean>(true); // NOUVEAU
+  const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const { isFav, toggleFav } = useLibrary();
@@ -159,21 +158,19 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     const idToSearch = tmdbId || "";
     const titleToSearch = movieTitle || "";
     if (!idToSearch && !titleToSearch) {
-      setLogoLoading(false);
+      setLogoState({ url: null, loading: false });
       return;
     }
 
     let isMounted = true;
-    setLogoLoading(true);
+    setLogoState({ url: null, loading: true });
+    
     fetch(`/api/tmdb-logo?tmdbId=${idToSearch}&title=${encodeURIComponent(titleToSearch)}&type=movie`)
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted) {
-          if (data?.logoUrl) setLogoUrl(data.logoUrl);
-          setLogoLoading(false);
-        }
+        if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false });
       })
-      .catch(() => { if (isMounted) setLogoLoading(false); });
+      .catch(() => { if (isMounted) setLogoState({ url: null, loading: false }); });
 
     return () => { isMounted = false; };
   }, [tmdbId, movieTitle]);
@@ -224,16 +221,22 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
 
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 w-full">
           {posterUrl && <img src={posterUrl} alt={movieTitle} className="w-28 sm:w-36 aspect-[2/3] object-cover rounded-xl shadow-2xl border border-white/10 flex-shrink-0" />}
+          
           <div className="space-y-2 sm:space-y-3 flex-1">
-            
-            {/* GESTION INTELLIGENTE DU LOGO : SKELETON -> LOGO OU TEXTE */}
-            {logoLoading ? (
-              <div className="h-16 sm:h-24 md:h-28 w-48 sm:w-64 bg-white/10 animate-pulse rounded-xl mb-2" />
-            ) : logoUrl ? (
-              <img src={logoUrl} alt={movieTitle} className="h-16 sm:h-24 md:h-28 object-contain mb-2 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
-            ) : (
-              <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">{movieTitle}</h1>
-            )}
+            {/* LOGO PARFAITEMENT ALIGNÉ ET SANS FLASH DE TEXTE */}
+            <div className="min-h-[80px] sm:min-h-[120px] w-full flex flex-col justify-end items-start mb-2">
+              {logoState.loading ? (
+                <div className="h-16 w-48 animate-pulse bg-white/10 rounded-xl sm:h-24 sm:w-64" />
+              ) : logoState.url ? (
+                <img 
+                  src={logoState.url} 
+                  alt={movieTitle} 
+                  className="max-h-[100px] sm:max-h-[150px] w-auto max-w-[90%] object-contain object-left filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
+                />
+              ) : (
+                <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">{movieTitle}</h1>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400 font-medium">
               {rating > 0 && <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md flex items-center gap-1 font-semibold"><Star className="w-3 h-3 fill-current" /> {rating.toFixed(1)}</span>}
