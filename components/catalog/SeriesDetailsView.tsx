@@ -107,10 +107,15 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
-  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE
+  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE NETTOYÉ
   useEffect(() => {
     const tmdbId = info?.tmdb_id || "";
-    const seriesTitle = info?.name || info?.title || "";
+    const rawTitle = info?.name || info?.title || "";
+    
+    // Le filtre magique qui supprime (2019), (2026), etc. avant d'interroger l'API
+    const titleWithoutYear = rawTitle.replace(/\s*\(\d{4}\)\s*/g, "").trim();
+    const seriesTitle = cleanName(titleWithoutYear); 
+    
     if (!tmdbId && !seriesTitle) return;
 
     let isMounted = true;
@@ -172,7 +177,10 @@ export default function SeriesDetailPage() {
   if (isLoading) return <SeriesSkeleton />;
   if (isError || !data) return <p className="px-8 py-24 text-center text-red-300">Impossible de charger la série.</p>;
 
-  const title = (info?.name as string) || (info?.title as string) || "Série";
+  // NETTOYAGE DU TITRE POUR L'AFFICHAGE (Enlève les années entre parenthèses)
+  const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
+  const title = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").trim();
+
   const rating = ratingNum(info?.rating);
   const year = yearFrom(info?.releaseDate || info?.releasedate, title);
   const fav = isFav("series", Number(id));
