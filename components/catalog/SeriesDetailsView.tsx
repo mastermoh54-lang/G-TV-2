@@ -120,12 +120,10 @@ export default function SeriesDetailPage() {
   const activeSeasonKey = seasonKey ?? seasons[0] ?? null;
   const episodes = activeSeasonKey !== null ? episodesBySeason[activeSeasonKey] ?? [] : [];
 
-  // --- L'ANTI-CACHE EST ICI ---
-  // Il génère une URL unique à chaque fois que tu cliques sur un épisode
   const activeSourceUrl = useMemo(() => {
     if (!activeEpisode) return [];
     const cb = Date.now();
-    return [`/api/vod?type=series&id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
+    return [`/api/series?id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
   }, [activeEpisode]);
 
   const handleFullscreenLandscape = async () => {
