@@ -123,7 +123,7 @@ export default function SeriesDetailPage() {
   const activeSourceUrl = useMemo(() => {
     if (!activeEpisode) return [];
     const cb = Date.now();
-    return [`/api/series?id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
+    return [`/api/episode?id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
   }, [activeEpisode]);
 
   const handleFullscreenLandscape = async () => {
