@@ -35,6 +35,8 @@ export async function GET(req: Request) {
     const id = searchParams.get("id");
     const originalExt = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
+    // Récupération du choix de la piste audio (0 par défaut)
+    const a = Math.max(0, Math.floor(Number(searchParams.get("a") || 0)));
 
     if (!id) {
       return new Response("ID manquant", { status: 400, headers: NO_CACHE_HEADERS });
@@ -49,33 +51,29 @@ export async function GET(req: Request) {
     const u = encodeURIComponent(creds.username || creds.user || "");
     const p = encodeURIComponent(creds.password || creds.pass || "");
 
-    // 1. URL ciblée spécifiquement sur le dossier SERIES
     let inputUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
-    console.log(`[SHOW] 🔍 Test du lien : ${inputUrl}`);
 
     let isOk = await checkUrl(inputUrl);
-
-    // 2. Fallback intelligent si le format n'est pas le bon (évite les 404)
     if (!isOk) {
-      console.log(`[SHOW] ⚠️ Format .${originalExt} introuvable. Test des alternatives...`);
       const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
       for (const altExt of fallbacks) {
         const altUrl = `${host}/series/${u}/${p}/${id}.${altExt}`;
         if (await checkUrl(altUrl)) {
-          console.log(`[SHOW] ✅ Alternative trouvée ! On utilise : .${altExt}`);
           inputUrl = altUrl;
           break;
         }
       }
     }
 
-    // 3. Proxy FFmpeg (Identique à VOD) pour contourner le blocage HTTPS/HTTP du navigateur
+    // Le paramètre -map permet d'isoler la vidéo (0:v:0) et la piste audio choisie (0:a:a)
     const args = [
       "-hide_banner",
       "-loglevel", "error",
       "-user_agent", UA,
       ...(t > 0 ? ["-ss", String(t)] : []),
       "-i", inputUrl,
+      "-map", "0:v:0?",
+      "-map", `0:a:${a}?`,
       "-c:v", "copy",
       "-c:a", "aac",
       "-ac", "2",
@@ -85,13 +83,7 @@ export async function GET(req: Request) {
       "pipe:1",
     ];
 
-    console.log(`[SHOW] 🚀 Lancement FFmpeg -> ${inputUrl}`);
     const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
-
-    ff.stderr.on("data", (d) => {
-      const s = String(d).trim();
-      if (s) console.log(`[FFMPEG-SHOW] ${s}`);
-    });
 
     const stream = new ReadableStream({
       start(controller) {
@@ -115,13 +107,9 @@ export async function GET(req: Request) {
     });
 
     return new Response(stream, {
-      headers: {
-        "content-type": "video/mp4",
-        ...NO_CACHE_HEADERS,
-      },
+      headers: { "content-type": "video/mp4", ...NO_CACHE_HEADERS },
     });
   } catch (err: any) {
-    console.error("[SHOW] Crash total :", err);
     return new Response(`Erreur SHOW: ${err.message}`, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
