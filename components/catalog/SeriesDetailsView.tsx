@@ -107,19 +107,19 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
-  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE NETTOYÉ
+  // RECHERCHE DU LOGO TMDB / FANART (SANS LE CLEANNAME POUR LA RECHERCHE API)
   useEffect(() => {
     const tmdbId = info?.tmdb_id || "";
     const rawTitle = info?.name || info?.title || "";
     
-    // Le filtre magique qui supprime (2019), (2026), etc. avant d'interroger l'API
+    // On enlève (2019), (2026)... pour que la recherche Fanart/TMDB fonctionne
     const titleWithoutYear = rawTitle.replace(/\s*\(\d{4}\)\s*/g, "").trim();
-    const seriesTitle = cleanName(titleWithoutYear); 
     
-    if (!tmdbId && !seriesTitle) return;
+    if (!tmdbId && !titleWithoutYear) return;
 
     let isMounted = true;
-    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(seriesTitle)}&type=tv`)
+    // ATTENTION : On envoie titleWithoutYear brut (sans cleanName) pour ne pas perturber TMDB
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(titleWithoutYear)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
