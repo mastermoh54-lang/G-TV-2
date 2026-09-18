@@ -56,13 +56,8 @@ function WatchInner() {
     if (!rawExt && type === "movie") {
       rawExt = (movieInfo?.movie_data as any)?.container_extension;
     }
-
     if (isLive) return "m3u8";
-
-    if (!rawExt || rawExt.toLowerCase() === "mkv") {
-      return "mp4";
-    }
-
+    if (!rawExt || rawExt.toLowerCase() === "mkv") return "mp4";
     return rawExt;
   }, [extParam, resolved, type, movieInfo, isLive]);
 
