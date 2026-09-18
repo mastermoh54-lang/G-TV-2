@@ -75,10 +75,19 @@ export function VideoPlayer({
   const [seekBase, setSeekBase] = useState(0);
   const [scrub, setScrub] = useState<number | null>(null);
 
-  const rawSrc = sources[srcIdx] ?? sources[0];
-  // Identifie la route comme "transcodée" pour éviter de casser l'avance rapide (seek)
-  const isTranscode = !!rawSrc && (rawSrc.includes("/api/transcode") || rawSrc.includes("/api/vod"));
+  // --- LE HACK ANTI-TRANSCODE EST ICI ---
+  let rawSrc = sources[srcIdx] ?? sources[0];
+  
+  if (rawSrc && rawSrc.includes("/api/transcode")) {
+    console.log("⚠️ LECTEUR: Route transcode détectée ! Forçage vers /api/show");
+    rawSrc = rawSrc.replace("/api/transcode", "/api/show");
+  }
+
+  // Ajout de "/api/show" pour que l'avance rapide fonctionne correctement
+  const isTranscode = !!rawSrc && (rawSrc.includes("/api/vod") || rawSrc.includes("/api/show"));
   const src = isTranscode && seekBase > 0 ? `${rawSrc}&t=${Math.floor(seekBase)}` : rawSrc;
+  // --- FIN DU HACK ---
+
   const seekable = !isLive;
   const total = isTranscode && knownDuration > 0 ? knownDuration : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
