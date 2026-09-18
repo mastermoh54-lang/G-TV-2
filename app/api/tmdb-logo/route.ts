@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// 🔴 C'EST ÇA QUI TUE LA "PAGE CACHÉE" : Interdit à Next.js de garder les échecs en mémoire !
+export const dynamic = "force-dynamic";
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -12,22 +15,24 @@ export async function GET(req: Request) {
 
     if (!TMDB_KEY) return NextResponse.json({ logoUrl: null });
 
-    // Nettoyage au cas où on doive chercher par le texte en dernier recours
+    // NETTOYAGE EXTRÊME : Enlève les S01, S1, VF, VOSTFR, 1080p, Multi, 4K, et les points/tirets
     const cleanTitle = title
       .replace(/\|.*?\|/g, "")
       .replace(/\[.*?\]/g, "")
       .replace(/\(.*?\)/g, "")
       .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "")
-      .replace(/Saison \d+/gi, "")
-      .replace(/Season \d+/gi, "")
+      .replace(/\b(Saison|Season|S)\s*\d+\b/gi, "")
+      .replace(/\b(1080p|720p|4k|fhd|hd|vostfr|vf|multi)\b/gi, "")
+      .replace(/[-_.]/g, " ") // Remplace les points et tirets par des espaces (ex: Ma.Serie.VF -> Ma Serie)
+      .replace(/\s+/g, " ")
       .trim();
 
     let finalTmdbId = tmdbId;
     let tmdbLogoUrl = null;
     let fanartLogoUrl = null;
 
-    // ÉTAPE 1 : ON FAIT CONFIANCE À L'ID FOURNI ET ON CHERCHE DIRECTEMENT SUR TMDB
-    if (finalTmdbId && finalTmdbId !== "0" && finalTmdbId !== "null") {
+    // ÉTAPE 1 : ON TESTE L'ID FOURNI PAR L'IPTV
+    if (finalTmdbId && finalTmdbId !== "0" && finalTmdbId !== "null" && finalTmdbId !== "") {
       const tmdbImagesUrl = `https://api.themoviedb.org/3/${type}/${finalTmdbId}/images?api_key=${TMDB_KEY}&include_image_language=fr,en,null`;
       const tmdbRes = await fetch(tmdbImagesUrl);
       
@@ -36,14 +41,17 @@ export async function GET(req: Request) {
         if (data.logos && data.logos.length > 0) {
           const best = data.logos.find((l: any) => l.iso_639_1 === 'fr') || data.logos.find((l: any) => l.iso_639_1 === 'en') || data.logos[0];
           tmdbLogoUrl = `https://image.tmdb.org/t/p/w500${best.file_path}`;
+        } else {
+          // COUP DE GÉNIE ICI : L'ID est valide MAIS n'a pas de logo ! (Sûrement un faux ID de l'IPTV).
+          // On jette cet ID à la poubelle pour le forcer à chercher par le titre purifié !
+          finalTmdbId = null;
         }
       } else {
-        // L'ID était faux, on le réinitialise pour passer à l'étape 2
         finalTmdbId = null;
       }
     }
 
-    // ÉTAPE 2 : RECHERCHE PAR TITRE UNIQUEMENT SI L'ID ÉTAIT FAUX OU MANQUANT
+    // ÉTAPE 2 : RECHERCHE PAR LE TITRE PURIFIÉ (Si l'ID était mauvais ou vide de logos)
     if (!finalTmdbId && cleanTitle) {
       const searchUrl = `https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}`;
       const searchRes = await fetch(searchUrl);
@@ -53,7 +61,7 @@ export async function GET(req: Request) {
         if (searchData.results && searchData.results.length > 0) {
           finalTmdbId = searchData.results[0].id.toString();
           
-          // On relance la recherche d'images pour ce nouvel ID
+          // On a trouvé le vrai ID de la série ! On récupère son logo.
           const tmdbImagesUrl = `https://api.themoviedb.org/3/${type}/${finalTmdbId}/images?api_key=${TMDB_KEY}&include_image_language=fr,en,null`;
           const tmdbRes2 = await fetch(tmdbImagesUrl);
           if (tmdbRes2.ok) {
@@ -67,11 +75,10 @@ export async function GET(req: Request) {
       }
     }
 
-    // ÉTAPE 3 : ON A MAINTENANT UN ID VALIDE. ON TENTE D'AVOIR UN LOGO ENCORE MEILLEUR SUR FANART !
+    // ÉTAPE 3 : ON ESSAIE D'AVOIR LA VERSION HAUTE DÉFINITION SUR FANART
     if (finalTmdbId && FANART_KEY) {
       let fanartQueryId = finalTmdbId;
       
-      // Pour les séries, Fanart veut le TVDB ID. On essaie de le traduire.
       if (type === "tv") {
         const extRes = await fetch(`https://api.themoviedb.org/3/tv/${finalTmdbId}/external_ids?api_key=${TMDB_KEY}`);
         if (extRes.ok) {
@@ -94,15 +101,13 @@ export async function GET(req: Request) {
               
           if (logos.length > 0) {
             const best = logos.find((l: any) => l.lang === 'fr') || logos.find((l: any) => l.lang === 'en') || logos[0];
-            fanartLogoUrl = best.url;
+            if (best?.url) fanartLogoUrl = best.url;
           }
         }
-      } catch (e) {
-        // Fanart échoue, ce n'est pas grave, on a déjà TMDB de côté !
-      }
+      } catch (e) {}
     }
 
-    // ÉTAPE FINALE : On renvoie Fanart (Le plus beau), sinon TMDB (Très bien), sinon null (Texte)
+    // RÉSULTAT : On donne Fanart (1er choix), TMDB (2ème choix), ou null (Texte par défaut)
     return NextResponse.json({ logoUrl: fanartLogoUrl || tmdbLogoUrl || null });
     
   } catch (error) {
