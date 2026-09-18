@@ -13,6 +13,20 @@ import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
 
+// LE NETTOYEUR ULTIME : Pulvérise tout ce qui parasite le titre
+function getCleanSeriesTitle(raw: string): string {
+  if (!raw) return "";
+  return String(raw)
+    .replace(/\(.*?\)/g, "") // Enlève TOUT entre parenthèses (ex: (2012), (FR))
+    .replace(/\[.*?\]/g, "") // Enlève TOUT entre crochets
+    .replace(/\{.*?\}/g, "") // Enlève TOUT entre accolades
+    .replace(/\|.*?\|/g, "") // Enlève TOUT entre pipes
+    .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "") // Enlève - 2012
+    .replace(/\b(19|20)\d{2}\b/g, "") // Enlève 2012 tout seul
+    .replace(/\b(Saison|Season|S)\s*\d+\b/gi, "") // Enlève Saison 1
+    .trim();
+}
+
 function EpisodeImage({ ep, seriesTitle, tmdbId, seasonKey, fallbackCover }: any) {
   const [imgSrc, setImgSrc] = useState<string | null>(ep.info?.movie_image || null);
 
@@ -77,7 +91,7 @@ export default function SeriesDetailPage() {
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
   
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [logoLoading, setLogoLoading] = useState<boolean>(true); // NOUVEAU
+  const [logoLoading, setLogoLoading] = useState<boolean>(true);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
@@ -85,19 +99,23 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
+  // OBTENTION DU TITRE PARFAITEMENT PROPRE
+  const rawTitle = (info?.name as string) || (info?.title as string) || "Série";
+  const ultraCleanTitle = getCleanSeriesTitle(rawTitle);
+  const titleForDisplay = cleanName(ultraCleanTitle);
+
+  // RECHERCHE DU LOGO AVEC LE TITRE PURIFIÉ
   useEffect(() => {
     const tmdbId = info?.tmdb_id || "";
-    const rawTitle = info?.name || info?.title || "";
-    const titleWithoutYear = rawTitle.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
     
-    if (!tmdbId && !titleWithoutYear) {
+    if (!tmdbId && !ultraCleanTitle) {
       setLogoLoading(false);
       return;
     }
 
     let isMounted = true;
     setLogoLoading(true);
-    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(titleWithoutYear)}&type=tv`)
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(ultraCleanTitle)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted) {
@@ -108,7 +126,7 @@ export default function SeriesDetailPage() {
       .catch(() => { if (isMounted) setLogoLoading(false); });
 
     return () => { isMounted = false; };
-  }, [info?.tmdb_id, info?.name, info?.title]);
+  }, [info?.tmdb_id, ultraCleanTitle]);
 
   const seasons = useMemo(() => {
     if (!episodesBySeason) return [];
@@ -145,10 +163,8 @@ export default function SeriesDetailPage() {
   if (isLoading) return <SeriesSkeleton />;
   if (isError || !data) return <p className="px-8 py-24 text-center text-red-300">Impossible de charger la série.</p>;
 
-  const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
-  const title = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
   const rating = ratingNum(info?.rating);
-  const year = yearFrom(info?.releaseDate || info?.releasedate, title);
+  const year = yearFrom(info?.releaseDate || info?.releasedate, titleForDisplay);
   const fav = isFav("series", Number(id));
   const castList = info?.cast ? info.cast.split(",").map((a: string) => a.trim()).filter(Boolean) : [];
 
@@ -161,16 +177,16 @@ export default function SeriesDetailPage() {
         .rotate-y-180 { transform: rotateY(180deg); }
       `}</style>
 
-      <DetailHero backdrop={info?.backdrop_path?.[0] || info?.backdrop} poster={info?.cover} title={title} fav={fav} onToggleFav={() => toggleFav("series", { id: Number(id), name: cleanName(title), poster: info?.cover })}>
+      <DetailHero backdrop={info?.backdrop_path?.[0] || info?.backdrop} poster={info?.cover} title={titleForDisplay} fav={fav} onToggleFav={() => toggleFav("series", { id: Number(id), name: titleForDisplay, poster: info?.cover })}>
         <div className="space-y-4 max-w-4xl">
           <div>
             {/* GESTION DU LOGO : SKELETON OU LOGO OU TEXTE */}
             {logoLoading ? (
               <div className="h-16 sm:h-24 md:h-32 w-48 sm:w-64 bg-white/10 animate-pulse rounded-xl mb-4" />
             ) : logoUrl ? (
-              <img src={logoUrl} alt={title} className="h-16 sm:h-24 md:h-32 object-contain mb-4 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
+              <img src={logoUrl} alt={titleForDisplay} className="h-16 sm:h-24 md:h-32 object-contain mb-4 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
             ) : (
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{cleanName(title)}</h1>
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{titleForDisplay}</h1>
             )}
             
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-fog-300">
@@ -212,7 +228,7 @@ export default function SeriesDetailPage() {
               </div>
               <div ref={playerContainerRef} onClick={handleDoubleTap} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5 cursor-pointer">
                 <div className="absolute inset-0 flex items-center justify-center [&>div]:w-full [&>div]:h-full [&_video]:w-full [&_video]:h-full [&_video]:object-contain">
-                  <VideoPlayer key={activeEpisode.id} sources={activeSourceUrl} ext="mp4" isLive={false} title={`${title} - S${activeEpisode.season || activeSeasonKey}E${activeEpisode.episode_num}`} />
+                  <VideoPlayer key={activeEpisode.id} sources={activeSourceUrl} ext="mp4" isLive={false} title={`${titleForDisplay} - S${activeEpisode.season || activeSeasonKey}E${activeEpisode.episode_num}`} />
                 </div>
               </div>
             </div>
@@ -227,7 +243,7 @@ export default function SeriesDetailPage() {
               return (
                 <div key={ep.id} onClick={() => setActiveEpisode(ep)} className={cn("group flex items-center gap-4 rounded-xl border p-2.5 transition-colors cursor-pointer", isSelected ? "bg-ink-800 border-iris-500/50 shadow-md" : "bg-ink-850/60 border-white/5 hover:bg-ink-800")}>
                   <div className="relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg bg-ink-900 sm:w-36">
-                    <EpisodeImage ep={ep} seriesTitle={cleanName(title)} tmdbId={info?.tmdb_id} seasonKey={activeSeasonKey || "1"} fallbackCover={info?.cover || info?.backdrop} />
+                    <EpisodeImage ep={ep} seriesTitle={titleForDisplay} tmdbId={info?.tmdb_id} seasonKey={activeSeasonKey || "1"} fallbackCover={info?.cover || info?.backdrop} />
                     <span className="absolute inset-0 grid place-items-center bg-ink-950/30 opacity-0 transition-opacity group-hover:opacity-100"><span className="grid h-8 w-8 place-items-center rounded-full bg-iris-400 text-ink-950"><Play className="h-3.5 w-3.5 translate-x-0.5 fill-ink-950" /></span></span>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -235,7 +251,7 @@ export default function SeriesDetailPage() {
                     {ep.info?.duration && <p className="mt-0.5 flex items-center gap-1 text-xs text-fog-500"><Clock className="h-3 w-3" /> {ep.info.duration}</p>}
                     {ep.info?.plot && <p className="mt-1 line-clamp-1 text-xs text-fog-400">{ep.info.plot}</p>}
                   </div>
-                  <Link href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} ·${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`} onClick={(e) => e.stopPropagation()} className="p-2 text-fog-400 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Lire en plein écran"><Maximize className="w-4 h-4" /></Link>
+                  <Link href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${titleForDisplay} ·${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`} onClick={(e) => e.stopPropagation()} className="p-2 text-fog-400 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Lire en plein écran"><Maximize className="w-4 h-4" /></Link>
                 </div>
               );
             })}
