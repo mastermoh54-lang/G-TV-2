@@ -95,8 +95,9 @@ function WatchInner() {
       return [`/api/live?id=${id}`];
     }
     
+    // POINTE VERS LA NOUVELLE API SANS CONFLIT
     if (mediaKind === "series") {
-      return [`/api/episode?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
+      return [`/api/show?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
     }
     
     return [
