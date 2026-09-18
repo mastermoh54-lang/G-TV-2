@@ -8,6 +8,24 @@ export const dynamic = "force-dynamic";
 const UA = "VLC/3.0.20 LibVLC/3.0.20";
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
+// Nouveau radar furtif : utilise un GET partiel au lieu de HEAD (anti-blocage IPTV)
+async function checkUrl(url: string) {
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { 
+        "User-Agent": UA,
+        // On demande juste les 100 premiers octets pour ne rien télécharger
+        "Range": "bytes=0-100" 
+      }
+    });
+    // 200 OK ou 206 Partial Content = Le fichier existe bien !
+    return res.ok || res.status === 206;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const creds = (await requireSession()) as any;
@@ -15,19 +33,15 @@ export async function GET(req: Request) {
 
     const type = searchParams.get("type") || "movie";
     const id = searchParams.get("id");
-    let ext = searchParams.get("ext") || "mp4";
+    const originalExt = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
     if (!id || type === "live") {
       return new Response("Invalid parameters", { status: 400 });
     }
 
-    // --- CORRECTION DU BUG "UNDEFINED" ---
-    // Tes logs indiquent que le lien est stocké sous "baseUrl" !
     const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
-    
     if (!rawHost) {
-      console.error("[VOD] ❌ Erreur : Impossible de trouver l'URL du serveur dans la session", creds);
       return new Response("URL du serveur manquante", { status: 400 });
     }
 
@@ -36,24 +50,32 @@ export async function GET(req: Request) {
     const p = encodeURIComponent(creds.password || creds.pass || "");
     const folder = type === "series" ? "series" : "movie";
 
-    // --- CONSTRUCTION DU LIEN XTREAM ---
-    let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${ext}`;
-    console.log(`[VOD] 🔗 Test du lien : ${inputUrl}`);
+    let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${originalExt}`;
+    
+    console.log(`[VOD] 🔍 Vérification du lien principal : ${inputUrl}`);
+    
+    let isOk = await checkUrl(inputUrl);
 
-    // --- ANTI-PLANTAGE (Vérification 404 MP4 vs MKV) ---
-    // Si le fournisseur renvoie 404 sur le mp4, on passe automatiquement au mkv
-    try {
-      const check = await fetch(inputUrl, { method: "HEAD", headers: { "User-Agent": UA } });
-      if (!check.ok && check.status === 404) {
-         console.log(`[VOD] ⚠️ Erreur 404 sur .${ext}, tentative avec l'extension alternative...`);
-         ext = ext === "mp4" ? "mkv" : "mp4";
-         inputUrl = `${host}/${folder}/${u}/${p}/${id}.${ext}`;
+    if (!isOk) {
+      console.log(`[VOD] ⚠️ Format .${originalExt} introuvable ou bloqué. Test des alternatives...`);
+      // L'arme secrète : on teste toutes les extensions courantes d'une traite
+      const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
+      
+      for (const altExt of fallbacks) {
+        const altUrl = `${host}/${folder}/${u}/${p}/${id}.${altExt}`;
+        if (await checkUrl(altUrl)) {
+          console.log(`[VOD] ✅ Alternative trouvée ! On utilise : .${altExt}`);
+          inputUrl = altUrl;
+          isOk = true;
+          break;
+        }
       }
-    } catch (e) {
-      console.log("[VOD] Impossible de vérifier l'URL avec HEAD, on force la lecture...");
     }
 
-    // --- LECTURE FFMPEG ---
+    if (!isOk) {
+       console.log(`[VOD] ❌ Toutes les extensions ont échoué. On force la lecture en aveugle...`);
+    }
+
     const args = [
       "-hide_banner",
       "-loglevel", "error",
