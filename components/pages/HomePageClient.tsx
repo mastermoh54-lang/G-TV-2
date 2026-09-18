@@ -13,16 +13,15 @@ import { useVodCategories, useSeriesCategories, useVodStreams, useSeriesList } f
 import { useLibrary, continueWatching } from "@/store/library";
 import { sortItems, yearFrom, ratingNum, cleanName, cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/useTranslation";
-import { Play, Info, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { Play, Info, Star } from "lucide-react";
 
 const CARD = "w-[140px] shrink-0 sm:w-[165px]";
 
-// NOUVEAU COMPOSANT : LE CARROUSEL GÉANT (Hero Slider)
+// CARROUSEL GÉANT AVEC CORRECTION DE TAILLE ET ALIGNEMENT
 function MainHeroSlider({ items }: { items: (HeroItem & { tmdbId?: string })[] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
 
-  // Auto-slide toutes les 7 secondes
   useEffect(() => {
     if (!items || items.length <= 1) return;
     const timer = setInterval(() => {
@@ -33,19 +32,23 @@ function MainHeroSlider({ items }: { items: (HeroItem & { tmdbId?: string })[] }
 
   const activeItem = items[currentIndex];
 
-  // Recherche du logo à chaque changement de slide
   useEffect(() => {
     if (!activeItem) return;
-    setLogoUrl(null); // On efface l'ancien logo
+    // On repasse en chargement IMMÉDIATEMENT au changement de slide
+    setLogoState({ url: null, loading: true }); 
+    
     const titleWithoutYear = activeItem.title.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
     
     let isMounted = true;
     fetch(`/api/tmdb-logo?tmdbId=${activeItem.tmdbId || ""}&title=${encodeURIComponent(titleWithoutYear)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
+        if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (isMounted) setLogoState({ url: null, loading: false });
+      });
+      
     return () => { isMounted = false; };
   }, [activeItem]);
 
@@ -53,7 +56,6 @@ function MainHeroSlider({ items }: { items: (HeroItem & { tmdbId?: string })[] }
 
   return (
     <div className="group relative mb-8 flex h-[65vh] min-h-[450px] w-full items-end overflow-hidden sm:h-[75vh] sm:min-h-[550px] sm:rounded-b-[3rem]">
-      {/* Backgrounds avec transition en fondu */}
       {items.map((bgItem, idx) => (
         <div
           key={bgItem.id}
@@ -63,23 +65,26 @@ function MainHeroSlider({ items }: { items: (HeroItem & { tmdbId?: string })[] }
           )}
         >
           <img src={bgItem.backdrop} alt={bgItem.title} className="h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0b0c10] via-[#0b0c10]/70 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0b0c10] via-[#0b0c10]/80 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0b0c10]/95 via-[#0b0c10]/50 to-transparent" />
         </div>
       ))}
 
-      {/* Contenu du Slide Actif */}
       <div className="relative z-10 w-full max-w-4xl px-5 pb-16 sm:px-12 sm:pb-24">
-        <div className="min-h-[120px] sm:min-h-[160px] flex flex-col justify-end">
-          {logoUrl ? (
+        {/* CONTENEUR DU LOGO / TITRE - Fixé à gauche */}
+        <div className="min-h-[100px] sm:min-h-[140px] w-full flex flex-col justify-end items-start mb-4">
+          {logoState.loading ? (
+            <div className="h-16 w-64 animate-pulse bg-white/10 rounded-xl sm:h-24 sm:w-80" />
+          ) : logoState.url ? (
             <img 
-              key={logoUrl} // Force le re-render de l'animation au changement
-              src={logoUrl} 
+              key={logoState.url}
+              src={logoState.url} 
               alt={activeItem.title} 
-              className="mb-6 h-20 object-contain sm:h-32 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)] animate-in fade-in zoom-in-95 duration-700 origin-left" 
+              // object-left est la clé pour aligner avec le texte en dessous !
+              className="max-h-[100px] sm:max-h-[150px] w-auto max-w-[80%] object-contain object-left filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)] animate-in fade-in duration-700" 
             />
           ) : (
-            <h1 key={activeItem.title} className="mb-4 text-4xl font-extrabold tracking-tight text-white sm:text-6xl drop-shadow-lg animate-in fade-in slide-in-from-left-4 duration-700">
+            <h1 key={activeItem.title} className="text-4xl font-extrabold tracking-tight text-white sm:text-6xl drop-shadow-lg animate-in fade-in duration-700">
               {cleanName(activeItem.title)}
             </h1>
           )}
@@ -117,7 +122,6 @@ function MainHeroSlider({ items }: { items: (HeroItem & { tmdbId?: string })[] }
         </div>
       </div>
 
-      {/* Indicateurs (Petits points en bas) */}
       <div className="absolute bottom-6 left-5 sm:left-12 z-20 flex gap-2">
         {items.map((_, idx) => (
           <button
@@ -144,7 +148,6 @@ export default function HomePageClient() {
   const heroCatId = seriesCats.data?.[0]?.category_id;
   const heroSeries = useSeriesList(heroCatId);
 
-  // On récupère les 8 meilleures séries pour le slider
   const heroItems = useMemo(() => {
     const withArt = (heroSeries.data ?? []).filter((s) => s.backdrop_path?.length || s.cover);
     return sortItems(withArt, "rating")
@@ -180,7 +183,6 @@ export default function HomePageClient() {
     <div className="bg-[#0b0c10] min-h-screen text-white pb-10">
       <TopBar title="G-Player" />
 
-      {/* LE CARROUSEL GÉANT */}
       {heroLoading ? (
         <div className="h-[65vh] w-full animate-pulse bg-white/5 sm:rounded-b-[3rem] mb-8" />
       ) : heroItems.length > 0 ? (
@@ -189,7 +191,6 @@ export default function HomePageClient() {
         <div className="pt-24" />
       )}
 
-      {/* Raccourcis Rapides - Ajustés sur 4 colonnes pour compenser la suppression de la mosaïque */}
       <div className="space-y-8 px-5 sm:px-8 relative z-10 -mt-8 sm:-mt-12">
         <div className="grid auto-rows-[168px] grid-cols-2 gap-4 lg:grid-cols-4 drop-shadow-2xl">
           {cw.length > 0 ? (
@@ -210,7 +211,6 @@ export default function HomePageClient() {
         </div>
       </div>
 
-      {/* CATÉGORIES (Shelves) */}
       <div className="space-y-9 pt-12">
         {(vodCats.isLoading || seriesCats.isLoading) && (
           <>
