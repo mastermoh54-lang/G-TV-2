@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const tmdbId = searchParams.get("tmdbId");
-    const title = searchParams.get("title") || "";
+    let tmdbId = searchParams.get("tmdbId");
+    let title = searchParams.get("title") || "";
     const type = searchParams.get("type") || "tv"; 
 
     const TMDB_KEY = process.env.TMDB_API_KEY;
@@ -12,11 +12,12 @@ export async function GET(req: Request) {
 
     if (!TMDB_KEY) return NextResponse.json({ logoUrl: null });
 
-    // NETTOYAGE ULTRA-AGRESSIF DU TITRE (Enlève |MULTI|, [FR], (2026), Saison 1...)
+    // NETTOYAGE ULTRA-AGRESSIF DU TITRE (Enlève |MULTI|, [FR], (2026), - 2023 -, Saison 1...)
     const cleanTitle = title
       .replace(/\|.*?\|/g, "")
       .replace(/\[.*?\]/g, "")
       .replace(/\(.*?\)/g, "")
+      .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "") // <- Le filtre pour les tirets et l'année !
       .replace(/Saison \d+/gi, "")
       .replace(/Season \d+/gi, "")
       .trim();
@@ -24,19 +25,17 @@ export async function GET(req: Request) {
     let finalTmdbId = null;
     let finalTvdbId = null;
 
-    // 1. TESTER L'ID FOURNI PAR L'IPTV (On vérifie s'il existe vraiment)
     if (tmdbId && tmdbId !== "0" && tmdbId !== "null" && tmdbId !== "") {
       const verifyRes = await fetch(`https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${TMDB_KEY}`);
       if (verifyRes.ok) {
         const extData = await verifyRes.json();
-        finalTmdbId = tmdbId; // L'ID est valide !
+        finalTmdbId = tmdbId; 
         if (type === "tv" && extData.tvdb_id) {
-          finalTvdbId = extData.tvdb_id.toString(); // Traduction pour Fanart
+          finalTvdbId = extData.tvdb_id.toString(); 
         }
       }
     }
 
-    // 2. RECHERCHE DE SECOURS VIA LE TITRE PURIFIÉ
     if (!finalTmdbId && cleanTitle) {
       const searchRes = await fetch(`https://api.themoviedb.org/3/search/${type}?api_key=${TMDB_KEY}&query=${encodeURIComponent(cleanTitle)}`);
       if (searchRes.ok) {
@@ -57,7 +56,6 @@ export async function GET(req: Request) {
 
     if (!finalTmdbId) return NextResponse.json({ logoUrl: null });
 
-    // 3. TENTATIVE FANART (La priorité absolue)
     if (FANART_KEY) {
       try {
         const fanartUrl = type === "movie"
@@ -80,12 +78,9 @@ export async function GET(req: Request) {
             }
           }
         }
-      } catch (e) {
-        // Ne rien faire, Fanart échoue, on passe au plan B
-      }
+      } catch (e) {}
     }
 
-    // 4. PLAN B : THEMOVIEDB (TMDB)
     const tmdbUrl = `https://api.themoviedb.org/3/${type}/${finalTmdbId}/images?api_key=${TMDB_KEY}&include_image_language=en,fr,null`;
     const tmdbRes = await fetch(tmdbUrl);
     
