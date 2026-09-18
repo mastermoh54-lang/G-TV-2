@@ -118,8 +118,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [activeMedia, setActiveMedia] = useState<"movie" | "trailer" | null>(null);
   const [currentLang, setCurrentLang] = useState("fr");
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
-  
-  // ÉTAT POUR LE LOGO
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -185,12 +183,14 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     return () => { isMounted = false; };
   }, [movieTitle, year, tmdbId, currentLang]);
 
-  // RECHERCHE DU LOGO TMDB
+  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE
   useEffect(() => {
-    if (!tmdbId) return;
+    const idToSearch = tmdbId || "";
+    const titleToSearch = movieTitle || "";
+    if (!idToSearch && !titleToSearch) return;
 
     let isMounted = true;
-    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&type=movie`)
+    fetch(`/api/tmdb-logo?tmdbId=${idToSearch}&title=${encodeURIComponent(titleToSearch)}&type=movie`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
@@ -198,7 +198,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
       .catch(() => {});
 
     return () => { isMounted = false; };
-  }, [tmdbId]);
+  }, [tmdbId, movieTitle]);
 
   const handleFullscreen = async () => {
     const elem = playerContainerRef.current;
