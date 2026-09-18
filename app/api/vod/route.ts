@@ -10,49 +10,58 @@ const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 
 export async function GET(req: Request) {
   try {
-    // 1. Authentification directe (plus de problème de redirection ou de 401)
-    const creds = await requireSession();
+    const creds = (await requireSession()) as any;
     const { searchParams } = new URL(req.url);
 
     const type = searchParams.get("type") || "movie";
     const id = searchParams.get("id");
-    const ext = searchParams.get("ext") || "mp4";
+    let ext = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
-    // Sécurité : le Live n'est jamais touché par ce fichier
     if (!id || type === "live") {
       return new Response("Invalid parameters", { status: 400 });
     }
 
-    const host = String(creds.url).replace(/\/+$/, "");
-    const u = encodeURIComponent(creds.username);
-    const p = encodeURIComponent(creds.password);
-    const folder = type === "series" ? "series" : "movie";
-
-    // 2. Construction de l'URL Xtream
-    let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${ext}`;
-
-    // 3. Vérification ANTI-PLANTAGE (Répare le "Can't play this stream")
-    // On teste si l'URL existe. Si le fournisseur dit "404 Not Found", on change l'extension.
-    try {
-      const check = await fetch(inputUrl, { method: "HEAD", headers: { "User-Agent": UA } });
-      if (!check.ok) {
-        const altExt = ext === "mp4" ? "mkv" : "mp4";
-        inputUrl = `${host}/${folder}/${u}/${p}/${id}.${altExt}`;
-      }
-    } catch (e) {
-      // Si la vérification échoue, on tente quand même de lire le flux
+    // --- CORRECTION DU BUG "UNDEFINED" ---
+    // On récupère l'URL du fournisseur peu importe comment ton app la stocke
+    const rawHost = creds.url || creds.serverUrl || creds.server || creds.host || "";
+    
+    if (!rawHost) {
+      console.error("[VOD] ❌ Erreur : Impossible de trouver l'URL du serveur dans la session", creds);
+      return new Response("URL du serveur manquante", { status: 400 });
     }
 
-    // 4. Lancement direct de FFmpeg (Son AAC garanti pour les films et séries)
+    const host = String(rawHost).replace(/\/+$/, "");
+    const u = encodeURIComponent(creds.username || creds.user || "");
+    const p = encodeURIComponent(creds.password || creds.pass || "");
+    const folder = type === "series" ? "series" : "movie";
+
+    // --- CONSTRUCTION DU LIEN XTREAM ---
+    let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${ext}`;
+    console.log(`[VOD] 🔗 Test du lien : ${inputUrl}`);
+
+    // --- ANTI-PLANTAGE (Vérification 404 MP4 vs MKV) ---
+    // Si le fournisseur renvoie 404 sur le mp4, on passe automatiquement au mkv
+    try {
+      const check = await fetch(inputUrl, { method: "HEAD", headers: { "User-Agent": UA } });
+      if (!check.ok && check.status === 404) {
+         console.log(`[VOD] ⚠️ Erreur 404 sur .${ext}, tentative avec l'extension alternative...`);
+         ext = ext === "mp4" ? "mkv" : "mp4";
+         inputUrl = `${host}/${folder}/${u}/${p}/${id}.${ext}`;
+      }
+    } catch (e) {
+      console.log("[VOD] Impossible de vérifier l'URL avec HEAD, on force la lecture...");
+    }
+
+    // --- LECTURE FFMPEG ---
     const args = [
       "-hide_banner",
       "-loglevel", "error",
       "-user_agent", UA,
       ...(t > 0 ? ["-ss", String(t)] : []),
       "-i", inputUrl,
-      "-c:v", "copy",       // L'image n'est pas touchée (aucun lag)
-      "-c:a", "aac",        // Le son est converti pour les navigateurs web
+      "-c:v", "copy",
+      "-c:a", "aac",
       "-ac", "2",
       "-b:a", "192k",
       "-movflags", "frag_keyframe+empty_moov+default_base_moof",
@@ -60,7 +69,7 @@ export async function GET(req: Request) {
       "pipe:1",
     ];
 
-    console.log(`[VOD] Lecture directe via FFmpeg -> ${inputUrl}`);
+    console.log(`[VOD] 🚀 Lancement FFmpeg -> ${inputUrl}`);
     const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
     ff.stderr.on("data", (d) => {
@@ -97,6 +106,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err: any) {
-    return new Response(`Erreur VOD: ${err.message}`, { status: 401 });
+    console.error("[VOD] Crash total :", err);
+    return new Response(`Erreur VOD: ${err.message}`, { status: 500 });
   }
 }
