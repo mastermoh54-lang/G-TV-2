@@ -12,7 +12,7 @@ import { useSeriesInfo } from "@/lib/hooks";
 import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
-import { CinemaLoader } from "@/components/ui/CinemaLoader"; // LE NOUVEAU LOADER
+import { CinemaLoader } from "@/components/ui/CinemaLoader";
 
 function EpisodeImage({ ep, seriesTitle, tmdbId, seasonKey, fallbackCover }: any) {
   const [imgSrc, setImgSrc] = useState<string | null>(ep.info?.movie_image || null);
@@ -78,7 +78,7 @@ export default function SeriesDetailPage() {
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
   
   const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
-  const [videoReady, setVideoReady] = useState(false); // ÉTAT POUR LE CINEMA LOADER
+  const [videoReady, setVideoReady] = useState(false);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
@@ -89,15 +89,31 @@ export default function SeriesDetailPage() {
   const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
   const titleForDisplay = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
 
-  // Relance le CinemaLoader à chaque nouvel épisode
+  // SCAN INTELLIGENT DU LECTEUR DE SÉRIE
   useEffect(() => {
-    if (activeEpisode) {
-      setVideoReady(false);
-      const timer = setTimeout(() => {
-        setVideoReady(true);
-      }, 2500); // 2.5s d'animation garantie
-      return () => clearTimeout(timer);
-    }
+    if (!activeEpisode) return;
+    setVideoReady(false);
+
+    const interval = setInterval(() => {
+      try {
+        if (playerContainerRef.current) {
+          const video = playerContainerRef.current.querySelector("video");
+          if (video && video.currentTime > 0 && !video.paused) {
+            setVideoReady(true);
+            clearInterval(interval);
+          }
+        }
+      } catch(e) {}
+    }, 300);
+
+    const fallback = setTimeout(() => {
+      setVideoReady(true);
+    }, 15000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(fallback);
+    };
   }, [activeEpisode]);
 
   useEffect(() => {
@@ -226,7 +242,6 @@ export default function SeriesDetailPage() {
                 </div>
               </div>
               
-              {/* LECTEUR AVEC CINEMA LOADER EN FONDU */}
               <div ref={playerContainerRef} onClick={handleDoubleTap} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5 cursor-pointer">
                 {!videoReady && <CinemaLoader />}
                 
