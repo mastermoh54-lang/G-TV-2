@@ -107,19 +107,15 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
-  // RECHERCHE DU LOGO TMDB / FANART (SANS LE CLEANNAME POUR LA RECHERCHE API)
+  // ENVOI DU TITRE BRUT, LE SERVEUR FERA LE NETTOYAGE EXTRÊME
   useEffect(() => {
     const tmdbId = info?.tmdb_id || "";
     const rawTitle = info?.name || info?.title || "";
     
-    // On enlève (2019), (2026)... pour que la recherche Fanart/TMDB fonctionne
-    const titleWithoutYear = rawTitle.replace(/\s*\(\d{4}\)\s*/g, "").trim();
-    
-    if (!tmdbId && !titleWithoutYear) return;
+    if (!tmdbId && !rawTitle) return;
 
     let isMounted = true;
-    // ATTENTION : On envoie titleWithoutYear brut (sans cleanName) pour ne pas perturber TMDB
-    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(titleWithoutYear)}&type=tv`)
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(rawTitle)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
@@ -177,7 +173,7 @@ export default function SeriesDetailPage() {
   if (isLoading) return <SeriesSkeleton />;
   if (isError || !data) return <p className="px-8 py-24 text-center text-red-300">Impossible de charger la série.</p>;
 
-  // NETTOYAGE DU TITRE POUR L'AFFICHAGE (Enlève les années entre parenthèses)
+  // NETTOYAGE DU TITRE POUR L'AFFICHAGE TEXTUEL VISUEL SEUL
   const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
   const title = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").trim();
 
@@ -207,7 +203,7 @@ export default function SeriesDetailPage() {
       >
         <div className="space-y-4 max-w-4xl">
           <div>
-            {/* AFFICHAGE CONDITIONNEL : LOGO OU TEXTE */}
+            {/* AFFICHAGE DU LOGO */}
             {logoUrl ? (
               <img 
                 src={logoUrl} 
