@@ -99,12 +99,29 @@ export default function SeriesDetailPage() {
 
   const [seasonKey, setSeasonKey] = useState<string | null>(null);
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null); // ETAT DU LOGO
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
 
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
+
+  // RECHERCHE DU LOGO TMDB
+  useEffect(() => {
+    const tmdbId = info?.tmdb_id;
+    if (!tmdbId) return;
+
+    let isMounted = true;
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&type=tv`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
+      })
+      .catch(() => {});
+
+    return () => { isMounted = false; };
+  }, [info?.tmdb_id]);
 
   const seasons = useMemo(() => {
     if (!episodesBySeason) return [];
@@ -123,7 +140,6 @@ export default function SeriesDetailPage() {
   const activeSourceUrl = useMemo(() => {
     if (!activeEpisode) return [];
     const cb = Date.now();
-    // POINTE VERS LA NOUVELLE API SANS CONFLIT
     return [`/api/show?id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
   }, [activeEpisode]);
 
@@ -182,7 +198,17 @@ export default function SeriesDetailPage() {
       >
         <div className="space-y-4 max-w-4xl">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{cleanName(title)}</h1>
+            {/* AFFICHAGE CONDITIONNEL : LOGO OU TEXTE */}
+            {logoUrl ? (
+              <img 
+                src={logoUrl} 
+                alt={title} 
+                className="h-16 sm:h-24 md:h-32 object-contain mb-4 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
+              />
+            ) : (
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{cleanName(title)}</h1>
+            )}
+            
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-fog-300">
               {rating > 0 && (
                 <span className="flex items-center gap-1 font-semibold text-iris-300">
