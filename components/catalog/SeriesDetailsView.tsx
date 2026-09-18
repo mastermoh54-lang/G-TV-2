@@ -13,20 +13,6 @@ import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
 
-// LE NETTOYEUR ULTIME : Pulvérise tout ce qui parasite le titre
-function getCleanSeriesTitle(raw: string): string {
-  if (!raw) return "";
-  return String(raw)
-    .replace(/\(.*?\)/g, "") // Enlève TOUT entre parenthèses (ex: (2012), (FR))
-    .replace(/\[.*?\]/g, "") // Enlève TOUT entre crochets
-    .replace(/\{.*?\}/g, "") // Enlève TOUT entre accolades
-    .replace(/\|.*?\|/g, "") // Enlève TOUT entre pipes
-    .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "") // Enlève - 2012
-    .replace(/\b(19|20)\d{2}\b/g, "") // Enlève 2012 tout seul
-    .replace(/\b(Saison|Season|S)\s*\d+\b/gi, "") // Enlève Saison 1
-    .trim();
-}
-
 function EpisodeImage({ ep, seriesTitle, tmdbId, seasonKey, fallbackCover }: any) {
   const [imgSrc, setImgSrc] = useState<string | null>(ep.info?.movie_image || null);
 
@@ -90,8 +76,7 @@ export default function SeriesDetailPage() {
   const [seasonKey, setSeasonKey] = useState<string | null>(null);
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
   
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [logoLoading, setLogoLoading] = useState<boolean>(true);
+  const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
@@ -99,34 +84,31 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
-  // OBTENTION DU TITRE PARFAITEMENT PROPRE
-  const rawTitle = (info?.name as string) || (info?.title as string) || "Série";
-  const ultraCleanTitle = getCleanSeriesTitle(rawTitle);
-  const titleForDisplay = cleanName(ultraCleanTitle);
+  const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
+  const titleForDisplay = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
 
-  // RECHERCHE DU LOGO AVEC LE TITRE PURIFIÉ
   useEffect(() => {
+    // SYNC AVEC L'ACCUEIL : Même nettoyage précis
     const tmdbId = info?.tmdb_id || "";
+    const ultraCleanTitle = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
     
     if (!tmdbId && !ultraCleanTitle) {
-      setLogoLoading(false);
+      setLogoState({ url: null, loading: false });
       return;
     }
 
     let isMounted = true;
-    setLogoLoading(true);
+    setLogoState({ url: null, loading: true });
+    
     fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(ultraCleanTitle)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted) {
-          if (data?.logoUrl) setLogoUrl(data.logoUrl);
-          setLogoLoading(false);
-        }
+        if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false });
       })
-      .catch(() => { if (isMounted) setLogoLoading(false); });
+      .catch(() => { if (isMounted) setLogoState({ url: null, loading: false }); });
 
     return () => { isMounted = false; };
-  }, [info?.tmdb_id, ultraCleanTitle]);
+  }, [info?.tmdb_id, rawTitleForDisplay]);
 
   const seasons = useMemo(() => {
     if (!episodesBySeason) return [];
@@ -180,14 +162,20 @@ export default function SeriesDetailPage() {
       <DetailHero backdrop={info?.backdrop_path?.[0] || info?.backdrop} poster={info?.cover} title={titleForDisplay} fav={fav} onToggleFav={() => toggleFav("series", { id: Number(id), name: titleForDisplay, poster: info?.cover })}>
         <div className="space-y-4 max-w-4xl">
           <div>
-            {/* GESTION DU LOGO : SKELETON OU LOGO OU TEXTE */}
-            {logoLoading ? (
-              <div className="h-16 sm:h-24 md:h-32 w-48 sm:w-64 bg-white/10 animate-pulse rounded-xl mb-4" />
-            ) : logoUrl ? (
-              <img src={logoUrl} alt={titleForDisplay} className="h-16 sm:h-24 md:h-32 object-contain mb-4 filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
-            ) : (
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{titleForDisplay}</h1>
-            )}
+            {/* LOGO PARFAITEMENT ALIGNÉ ET SANS FLASH DE TEXTE */}
+            <div className="min-h-[80px] sm:min-h-[120px] w-full flex flex-col justify-end items-start mb-4">
+              {logoState.loading ? (
+                <div className="h-16 w-48 animate-pulse bg-white/10 rounded-xl sm:h-24 sm:w-64" />
+              ) : logoState.url ? (
+                <img 
+                  src={logoState.url} 
+                  alt={titleForDisplay} 
+                  className="max-h-[100px] sm:max-h-[140px] w-auto max-w-[90%] object-contain object-left filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
+                />
+              ) : (
+                <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{cleanName(titleForDisplay)}</h1>
+              )}
+            </div>
             
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-fog-300">
               {rating > 0 && <span className="flex items-center gap-1 font-semibold text-iris-300"><Star className="h-4 w-4 fill-iris-300" /> {rating.toFixed(1)}</span>}
