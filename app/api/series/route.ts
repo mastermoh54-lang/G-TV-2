@@ -49,9 +49,9 @@ export async function GET(req: Request) {
     const u = encodeURIComponent(creds.username || creds.user || "");
     const p = encodeURIComponent(creds.password || creds.pass || "");
 
-    // ROUTE STRICTEMENT FORCÉE SUR "series"
+    // Structure spécifique pour les séries
     let inputUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
-    console.log(`[SERIES] 🔍 Test du lien : ${inputUrl}`);
+    console.log(`[SERIES] 🔍 Test du lien principal : ${inputUrl}`);
     
     let isOk = await checkUrl(inputUrl);
 
