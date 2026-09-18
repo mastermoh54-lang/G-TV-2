@@ -89,10 +89,16 @@ function WatchInner() {
   const mediaKind = type as StreamKind;
 
   const sources = useMemo(() => {
-    const cb = Date.now(); // ANTI-CACHE ICI AUSSI
+    const cb = Date.now();
+    
     if (isLive) {
       return [`/api/live?id=${id}`];
     }
+    
+    if (mediaKind === "series") {
+      return [`/api/series?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
+    }
+    
     return [
       `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`,
     ];
