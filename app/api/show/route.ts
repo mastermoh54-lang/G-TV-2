@@ -35,8 +35,6 @@ export async function GET(req: Request) {
     const id = searchParams.get("id");
     const originalExt = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
-    // Récupération du choix de la piste audio (0 par défaut)
-    const a = Math.max(0, Math.floor(Number(searchParams.get("a") || 0)));
 
     if (!id) {
       return new Response("ID manquant", { status: 400, headers: NO_CACHE_HEADERS });
@@ -65,15 +63,12 @@ export async function GET(req: Request) {
       }
     }
 
-    // Le paramètre -map permet d'isoler la vidéo (0:v:0) et la piste audio choisie (0:a:a)
     const args = [
       "-hide_banner",
       "-loglevel", "error",
       "-user_agent", UA,
       ...(t > 0 ? ["-ss", String(t)] : []),
       "-i", inputUrl,
-      "-map", "0:v:0?",
-      "-map", `0:a:${a}?`,
       "-c:v", "copy",
       "-c:a", "aac",
       "-ac", "2",
