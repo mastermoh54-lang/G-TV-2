@@ -6,16 +6,14 @@ import { Play, Star, Clock, X, User, Info, Maximize, Video, ArrowLeft, Heart, Fi
 import { useLibrary } from "@/store/library";
 import { api } from "@/lib/api";
 import { ratingNum, yearFrom, cleanName } from "@/lib/utils";
+import { CinemaLoader } from "@/components/ui/CinemaLoader"; // LE NOUVEAU LOADER
 
 function getCleanTitle(data: any): string {
   if (!data) return "Film";
   const info = data?.info || {};
   const vod = data?.movie_data || {};
   const rawTitle = info.name || vod.name || info.title || vod.title || info.o_name || "Film";
-  const cleaned = String(rawTitle)
-    .replace(/\s*\(\d{4}\)\s*$/g, "")
-    .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "")
-    .trim();
+  const cleaned = String(rawTitle).replace(/\s*\(\d{4}\)\s*$/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
   return cleaned ? cleanName(cleaned) : "Film";
 }
 
@@ -23,13 +21,11 @@ function getDurationInSeconds(data: any): number {
   if (!data) return 0;
   const info = data?.info || {};
   const vod = data?.movie_data || {};
-
   const secKeys = ["duration_secs", "length_secs", "duration_seconds"];
   for (const key of secKeys) {
     if (info[key] && !isNaN(Number(info[key]))) return Number(info[key]);
     if (vod[key] && !isNaN(Number(vod[key]))) return Number(vod[key]);
   }
-
   const strDur = info.duration || vod.duration || info.runtime || vod.runtime;
   if (strDur) {
     const cleanStr = String(strDur).toLowerCase().replace(/min/g, "").trim();
@@ -53,7 +49,6 @@ const FlipActorCard = ({ name }: { name: string }) => {
   useEffect(() => {
     let isMounted = true;
     if (!name) return;
-
     fetch(`/api/actor-photo?name=${encodeURIComponent(name)}`)
       .then((res) => res.json())
       .then((data) => {
@@ -62,42 +57,20 @@ const FlipActorCard = ({ name }: { name: string }) => {
           if (data?.bio) setBio(data.bio);
         }
       })
-      .catch(() => {
-        if (isMounted) setBio("Information non disponible.");
-      });
+      .catch(() => { if (isMounted) setBio("Information non disponible."); });
     return () => { isMounted = false; };
   }, [name]);
 
   return (
-    <div
-      tabIndex={0}
-      onClick={() => setIsFlipped(!isFlipped)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          setIsFlipped(!isFlipped);
-        }
-      }}
-      className="group perspective w-24 sm:w-28 h-36 sm:h-40 flex-shrink-0 cursor-pointer select-none focus:outline-none"
-    >
+    <div tabIndex={0} onClick={() => setIsFlipped(!isFlipped)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setIsFlipped(!isFlipped); } }} className="group perspective w-24 sm:w-28 h-36 sm:h-40 flex-shrink-0 cursor-pointer select-none focus:outline-none">
       <div className={`relative w-full h-full rounded-xl transition-transform duration-500 transform-style-3d ${isFlipped ? "rotate-y-180" : "group-hover:scale-105"}`}>
         <div className="absolute inset-0 w-full h-full rounded-xl overflow-hidden bg-[#181a24] border border-white/10 shadow-lg backface-hidden flex flex-col justify-end">
-          {photoUrl ? (
-            <img src={photoUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400"><User className="w-6 h-6" /></div>
-          )}
+          {photoUrl ? <img src={photoUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400"><User className="w-6 h-6" /></div>}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
-          <div className="relative z-10 p-1.5 flex items-center justify-between">
-            <span className="text-[10px] font-bold text-white line-clamp-1">{name}</span>
-            <Info className="w-2.5 h-2.5 text-indigo-400 opacity-70 flex-shrink-0" />
-          </div>
+          <div className="relative z-10 p-1.5 flex items-center justify-between"><span className="text-[10px] font-bold text-white line-clamp-1">{name}</span><Info className="w-2.5 h-2.5 text-indigo-400 opacity-70 flex-shrink-0" /></div>
         </div>
         <div className="absolute inset-0 w-full h-full rounded-xl p-2 bg-gradient-to-br from-indigo-950 to-[#12141c] border border-indigo-500/40 text-white backface-hidden rotate-y-180 flex flex-col justify-between shadow-xl">
-          <div className="space-y-0.5 overflow-hidden">
-            <p className="text-[9px] font-bold text-indigo-300 line-clamp-1">{name}</p>
-            <p className="text-[8px] text-zinc-300 leading-tight line-clamp-4">{bio}</p>
-          </div>
+          <div className="space-y-0.5 overflow-hidden"><p className="text-[9px] font-bold text-indigo-300 line-clamp-1">{name}</p><p className="text-[8px] text-zinc-300 leading-tight line-clamp-4">{bio}</p></div>
           <span className="text-[7px] text-zinc-500 italic self-end">Retourner</span>
         </div>
       </div>
@@ -112,8 +85,9 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [activeMedia, setActiveMedia] = useState<"movie" | "trailer" | null>(null);
   const [currentLang, setCurrentLang] = useState("fr");
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
-  
   const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
+  
+  const [mediaLoaded, setMediaLoaded] = useState(false); // ÉTAT POUR LE CINEMA LOADER
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const { isFav, toggleFav } = useLibrary();
@@ -131,6 +105,11 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
       else setError(true);
     }).catch(() => setError(true)).finally(() => setLoading(false));
   }, [movieId]);
+
+  // Reset de l'animation quand on change de média (Film <-> Trailer)
+  useEffect(() => {
+    if (activeMedia) setMediaLoaded(false);
+  }, [activeMedia]);
 
   const info = movieInfo?.info || movieInfo?.movie_data || {};
   const vodData = movieInfo?.movie_data || {};
@@ -161,17 +140,12 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
       setLogoState({ url: null, loading: false });
       return;
     }
-
     let isMounted = true;
     setLogoState({ url: null, loading: true });
-    
     fetch(`/api/tmdb-logo?tmdbId=${idToSearch}&title=${encodeURIComponent(titleToSearch)}&type=movie`)
       .then((res) => res.json())
-      .then((data) => {
-        if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false });
-      })
+      .then((data) => { if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false }); })
       .catch(() => { if (isMounted) setLogoState({ url: null, loading: false }); });
-
     return () => { isMounted = false; };
   }, [tmdbId, movieTitle]);
 
@@ -223,16 +197,11 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
           {posterUrl && <img src={posterUrl} alt={movieTitle} className="w-28 sm:w-36 aspect-[2/3] object-cover rounded-xl shadow-2xl border border-white/10 flex-shrink-0" />}
           
           <div className="space-y-2 sm:space-y-3 flex-1">
-            {/* LOGO PARFAITEMENT ALIGNÉ ET SANS FLASH DE TEXTE */}
             <div className="min-h-[80px] sm:min-h-[120px] w-full flex flex-col justify-end items-start mb-2">
               {logoState.loading ? (
                 <div className="h-16 w-48 animate-pulse bg-white/10 rounded-xl sm:h-24 sm:w-64" />
               ) : logoState.url ? (
-                <img 
-                  src={logoState.url} 
-                  alt={movieTitle} 
-                  className="max-h-[100px] sm:max-h-[150px] w-auto max-w-[90%] object-contain object-left filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" 
-                />
+                <img src={logoState.url} alt={movieTitle} className="max-h-[100px] sm:max-h-[150px] w-auto max-w-[90%] object-contain object-left filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]" />
               ) : (
                 <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">{movieTitle}</h1>
               )}
@@ -265,8 +234,28 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
                 <button onClick={() => setActiveMedia(null)} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors" title="Fermer"><X className="w-4 h-4" /></button>
               </div>
             </div>
+            
+            {/* LECTEUR AVEC CINEMA LOADER */}
             <div ref={playerContainerRef} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5">
-              {activeMedia === "movie" ? <iframe src={watchIframeUrl} className="w-full h-full border-0" allow="autoplay; fullscreen; picture-in-picture; encrypted-media; volume" allowFullScreen /> : <iframe src={youtubeEmbedUrl} title={`Bande-annonce ${movieTitle}`} className="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />}
+              {!mediaLoaded && <CinemaLoader />}
+              {activeMedia === "movie" ? (
+                <iframe 
+                  src={watchIframeUrl} 
+                  onLoad={() => setMediaLoaded(true)}
+                  className={`w-full h-full border-0 transition-opacity duration-1000 ${mediaLoaded ? "opacity-100" : "opacity-0"}`} 
+                  allow="autoplay; fullscreen; picture-in-picture; encrypted-media; volume" 
+                  allowFullScreen 
+                />
+              ) : (
+                <iframe 
+                  src={youtubeEmbedUrl} 
+                  title={`Bande-annonce ${movieTitle}`} 
+                  onLoad={() => setMediaLoaded(true)}
+                  className={`w-full h-full border-0 transition-opacity duration-1000 ${mediaLoaded ? "opacity-100" : "opacity-0"}`} 
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                  allowFullScreen 
+                />
+              )}
             </div>
           </div>
         )}
