@@ -23,8 +23,8 @@ export async function GET(req: Request) {
     }
 
     // --- CORRECTION DU BUG "UNDEFINED" ---
-    // On récupère l'URL du fournisseur peu importe comment ton app la stocke
-    const rawHost = creds.url || creds.serverUrl || creds.server || creds.host || "";
+    // Tes logs indiquent que le lien est stocké sous "baseUrl" !
+    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
     
     if (!rawHost) {
       console.error("[VOD] ❌ Erreur : Impossible de trouver l'URL du serveur dans la session", creds);
