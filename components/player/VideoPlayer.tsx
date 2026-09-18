@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   PictureInPicture2, Loader2, AlertTriangle, SkipForward, ArrowLeft,
-  RotateCcw, RotateCw, Captions, Gauge, Check, Upload, Languages
+  RotateCcw, RotateCw, Captions, Gauge, Check, Upload,
 } from "lucide-react";
 import { attach, type EngineHandle } from "@/lib/player/engine";
 import { formatTime, cn } from "@/lib/utils";
@@ -71,10 +71,6 @@ export function VideoPlayer({
   const [capMenu, setCapMenu] = useState(false);
   const [trackList, setTrackList] = useState<Array<{ index: number; label: string }>>([]);
   const [activeTrack, setActiveTrack] = useState<number>(-1);
-  
-  // États pour les pistes audio
-  const [audioMenu, setAudioMenu] = useState(false);
-  const [activeAudio, setActiveAudio] = useState(0);
 
   const [seekBase, setSeekBase] = useState(0);
   const [scrub, setScrub] = useState<number | null>(null);
@@ -85,16 +81,12 @@ export function VideoPlayer({
   }
 
   const isTranscode = !!rawSrc && (rawSrc.includes("/api/vod") || rawSrc.includes("/api/show"));
-  
-  // Construction du lien avec le paramètre de piste audio (&a=)
-  let src = rawSrc;
-  if (isTranscode) {
-    src += `&a=${activeAudio}`;
-    if (seekBase > 0) src += `&t=${Math.floor(seekBase)}`;
-  }
+  const src = isTranscode && seekBase > 0 ? `${rawSrc}&t=${Math.floor(seekBase)}` : rawSrc;
 
   const seekable = !isLive;
-  const total = isTranscode && knownDuration > 0 ? knownDuration : duration;
+  
+  // CORRECTIF DURÉE : Si c'est un transcode on ignore la fausse durée du navigateur
+  const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
   useEffect(() => {
@@ -221,6 +213,7 @@ export function VideoPlayer({
   const seek = useCallback(
     (t: number) => {
       if (isLive) return;
+      // CORRECTIF : Permet l'avance même si la durée totale (total) est inconnue (0)
       const target = Math.max(0, Math.min(t, total || Infinity));
       if (isTranscode) {
         setCurrent(0);
@@ -263,25 +256,15 @@ export function VideoPlayer({
     } catch {}
   };
 
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.playbackRate = speed;
+  }, [speed, src]);
+
   const applySpeed = (s: number) => {
     setSpeed(s);
     setSpeedMenu(false);
     if (videoRef.current) videoRef.current.playbackRate = s;
-  };
-
-  // Changement de piste audio
-  const changeAudioTrack = (idx: number) => {
-    if (idx === activeAudio) {
-      setAudioMenu(false);
-      return;
-    }
-    const v = videoRef.current;
-    if (v && isTranscode) {
-      setSeekBase(seekBase + v.currentTime);
-      setCurrent(0);
-    }
-    setActiveAudio(idx);
-    setAudioMenu(false);
   };
 
   const loadSubtitleFile = (file: File) => {
@@ -467,6 +450,11 @@ export function VideoPlayer({
                 setScrub(null);
               }}
               className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-white/20 accent-iris-400 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-iris-400"
+              style={{
+                background: `linear-gradient(to right, var(--color-iris-400) ${
+                  total ? ((scrub ?? displayCurrent) / total) * 100 : 0
+                }%, rgba(255,255,255,0.2) 0%)`,
+              }}
             />
             <span className="w-12">{total ? formatTime(total) : "—:—"}</span>
           </div>
@@ -507,43 +495,12 @@ export function VideoPlayer({
               step={0.05}
               value={muted ? 0 : volume}
               onChange={(e) => changeVolume(Number(e.target.value))}
+              aria-label="Volume"
               className="h-1 w-16 cursor-pointer appearance-none rounded-full bg-white/25 accent-iris-400 sm:w-24 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             />
           </div>
 
           <div className="ml-auto flex items-center gap-3 sm:gap-4">
-            
-            {/* --- MENU PISTES AUDIO --- */}
-            {!isLive && isTranscode && (
-              <div className="relative">
-                <button
-                  onClick={() => setAudioMenu((v) => !v)}
-                  className={cn("transition-transform hover:scale-110", activeAudio > 0 ? "text-iris-400" : "text-white/90")}
-                  title="Pistes audio"
-                >
-                  <Languages className="h-6 w-6" />
-                </button>
-                {audioMenu && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setAudioMenu(false)} />
-                    <div className="absolute bottom-10 right-0 z-20 w-40 overflow-hidden rounded-xl panel py-1 text-sm bg-ink-900 border border-white/10 shadow-xl">
-                      <p className="px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-fog-500">Audio</p>
-                      {[0, 1, 2, 3].map((idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => changeAudioTrack(idx)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-white/10"
-                        >
-                          <span>Piste {idx + 1}</span>
-                          {activeAudio === idx && <Check className="h-3.5 w-3.5 text-iris-400" />}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
             <div className="relative">
               <button
                 onClick={() => setCapMenu((v) => !v)}
