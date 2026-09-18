@@ -12,6 +12,7 @@ import { useSeriesInfo } from "@/lib/hooks";
 import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
+import { CinemaLoader } from "@/components/ui/CinemaLoader"; // LE NOUVEAU LOADER
 
 function EpisodeImage({ ep, seriesTitle, tmdbId, seasonKey, fallbackCover }: any) {
   const [imgSrc, setImgSrc] = useState<string | null>(ep.info?.movie_image || null);
@@ -77,6 +78,7 @@ export default function SeriesDetailPage() {
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
   
   const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
+  const [videoReady, setVideoReady] = useState(false); // ÉTAT POUR LE CINEMA LOADER
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
@@ -87,8 +89,18 @@ export default function SeriesDetailPage() {
   const rawTitleForDisplay = (info?.name as string) || (info?.title as string) || "Série";
   const titleForDisplay = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
 
+  // Relance le CinemaLoader à chaque nouvel épisode
   useEffect(() => {
-    // SYNC AVEC L'ACCUEIL : Même nettoyage précis
+    if (activeEpisode) {
+      setVideoReady(false);
+      const timer = setTimeout(() => {
+        setVideoReady(true);
+      }, 2500); // 2.5s d'animation garantie
+      return () => clearTimeout(timer);
+    }
+  }, [activeEpisode]);
+
+  useEffect(() => {
     const tmdbId = info?.tmdb_id || "";
     const ultraCleanTitle = rawTitleForDisplay.replace(/\s*\(\d{4}\)\s*/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
     
@@ -162,7 +174,6 @@ export default function SeriesDetailPage() {
       <DetailHero backdrop={info?.backdrop_path?.[0] || info?.backdrop} poster={info?.cover} title={titleForDisplay} fav={fav} onToggleFav={() => toggleFav("series", { id: Number(id), name: titleForDisplay, poster: info?.cover })}>
         <div className="space-y-4 max-w-4xl">
           <div>
-            {/* LOGO PARFAITEMENT ALIGNÉ ET SANS FLASH DE TEXTE */}
             <div className="min-h-[80px] sm:min-h-[120px] w-full flex flex-col justify-end items-start mb-4">
               {logoState.loading ? (
                 <div className="h-16 w-48 animate-pulse bg-white/10 rounded-xl sm:h-24 sm:w-64" />
@@ -214,8 +225,12 @@ export default function SeriesDetailPage() {
                   <button onClick={() => setActiveEpisode(null)} className="text-fog-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors" title="Fermer"><X className="w-4 h-4" /></button>
                 </div>
               </div>
+              
+              {/* LECTEUR AVEC CINEMA LOADER EN FONDU */}
               <div ref={playerContainerRef} onClick={handleDoubleTap} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5 cursor-pointer">
-                <div className="absolute inset-0 flex items-center justify-center [&>div]:w-full [&>div]:h-full [&_video]:w-full [&_video]:h-full [&_video]:object-contain">
+                {!videoReady && <CinemaLoader />}
+                
+                <div className={`absolute inset-0 flex items-center justify-center [&>div]:w-full [&>div]:h-full [&_video]:w-full [&_video]:h-full [&_video]:object-contain transition-opacity duration-1000 ${videoReady ? "opacity-100" : "opacity-0"}`}>
                   <VideoPlayer key={activeEpisode.id} sources={activeSourceUrl} ext="mp4" isLive={false} title={`${titleForDisplay} - S${activeEpisode.season || activeSeasonKey}E${activeEpisode.episode_num}`} />
                 </div>
               </div>
