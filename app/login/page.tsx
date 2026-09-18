@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowRight, User, Lock, Play } from "lucide-react";
 import { api } from "@/lib/api";
 import { normalizeBaseUrl } from "@/lib/xtream/urls";
 import { cn } from "@/lib/utils";
@@ -33,44 +33,78 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative grid min-h-dvh place-items-center overflow-hidden px-5 py-12">
-      {/* backdrop synthétique */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-1/2 top-1/3 h-[60vh] w-[60vh] -translate-x-1/2 rounded-full bg-iris-400/12 blur-[120px]" />
-        <div className="absolute bottom-0 right-0 h-[40vh] w-[40vh] rounded-full bg-indigo-500/10 blur-[120px]" />
+    <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-[#0b0c10] px-5 py-12">
+      {/* BACKGROUND CINÉMATIQUE IMMERSIF */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-[url('https://image.tmdb.org/t/p/original/rMZ7qOkP4CjH8LkoUDRX91Q9zVq.jpg')] bg-cover bg-center bg-no-repeat opacity-20 blur-sm mix-blend-luminosity" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0b0c10] via-[#0b0c10]/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0b0c10] via-transparent to-[#0b0c10]/50" />
+        
+        {/* Glow Effects */}
+        <div className="absolute -left-[20%] top-1/4 h-[50vh] w-[50vh] rounded-full bg-indigo-600/20 blur-[150px]" />
+        <div className="absolute -right-[20%] bottom-1/4 h-[40vh] w-[40vh] rounded-full bg-purple-600/10 blur-[120px]" />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center text-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="G-Player" className="mb-4 h-16 w-16 rounded-2xl shadow-xl glow-iris" />
-          <h1 className="text-3xl font-bold tracking-tight">G-Player</h1>
-          <p className="mt-1.5 text-sm text-fog-400">
-            Connectez-vous avec vos identifiants Xtream.
+      <div className="relative z-10 w-full max-w-[400px]">
+        <div className="mb-10 flex flex-col items-center text-center">
+          <div className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-2xl shadow-indigo-500/30">
+            <Play className="h-10 w-10 translate-x-0.5 fill-white text-white" />
+          </div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-white drop-shadow-lg">G-Player</h1>
+          <p className="mt-2 text-sm font-medium text-zinc-400">
+            Votre portail de streaming premium
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5 rounded-3xl glass p-6">
-          <Field label="Nom d'utilisateur" placeholder="username" value={username} onChange={setUsername} autoFocus />
-          <Field label="Mot de passe" placeholder="••••••••" type="password" value={password} onChange={setPassword} />
+        <form onSubmit={handleSubmit} className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black/40 p-8 shadow-2xl backdrop-blur-2xl">
+          <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
+          
+          <div className="relative space-y-5">
+            <Field 
+              label="Identifiant" 
+              icon={<User className="h-4 w-4" />}
+              placeholder="Entrez votre nom d'utilisateur" 
+              value={username} 
+              onChange={setUsername} 
+              autoFocus 
+            />
+            <Field 
+              label="Mot de passe" 
+              icon={<Lock className="h-4 w-4" />}
+              placeholder="••••••••" 
+              type="password" 
+              value={password} 
+              onChange={setPassword} 
+            />
 
-          {error && (
-            <p className="rounded-xl bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={busy}
-            className={cn(
-              "flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-iris-300 to-iris-500 py-3 font-semibold text-ink-950 transition-all hover:brightness-110 disabled:opacity-60",
+            {error && (
+              <div className="animate-in fade-in slide-in-from-top-2 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-center text-sm font-medium text-red-400">
+                {error}
+              </div>
             )}
-          >
-            {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <>Se connecter <ArrowRight className="h-4 w-4" /></>}
-          </button>
+
+            <button
+              type="submit"
+              disabled={busy || !username || !password}
+              className={cn(
+                "group relative mt-2 flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-white px-4 py-3.5 font-bold text-black transition-all hover:scale-[1.02] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
+              )}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/0 via-indigo-500/10 to-indigo-500/0 opacity-0 transition-opacity group-hover:opacity-100" />
+              {busy ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  Se connecter 
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </>
+              )}
+            </button>
+          </div>
         </form>
 
-        <p className="mt-6 text-center text-xs text-fog-500">
-          Les identifiants sont stockés en sécurité uniquement sur cet appareil.
+        <p className="mt-8 text-center text-xs font-medium text-zinc-500">
+          Connexion chiffrée &bull; Identifiants stockés localement
         </p>
       </div>
     </div>
@@ -81,6 +115,7 @@ function Field({
   label,
   value,
   onChange,
+  icon,
   type = "text",
   placeholder,
   autoFocus,
@@ -88,21 +123,27 @@ function Field({
   label: string;
   value: string;
   onChange: (v: string) => void;
+  icon: React.ReactNode;
   type?: string;
   placeholder?: string;
   autoFocus?: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-fog-400">{label}</span>
-      <input
-        type={type}
-        value={value}
-        autoFocus={autoFocus}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-xl border border-white/8 bg-ink-900/80 px-3.5 py-2.5 text-sm text-foreground placeholder:text-fog-600 transition-colors focus:border-iris-400/60 focus:outline-none"
-      />
+    <label className="block space-y-2">
+      <span className="block text-xs font-bold uppercase tracking-wider text-zinc-400">{label}</span>
+      <div className="relative">
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors peer-focus:text-indigo-400">
+          {icon}
+        </div>
+        <input
+          type={type}
+          value={value}
+          autoFocus={autoFocus}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="peer w-full rounded-xl border border-white/5 bg-white/5 py-3.5 pl-11 pr-4 text-sm text-white placeholder:text-zinc-600 transition-all focus:border-indigo-500/50 focus:bg-white/10 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
+        />
+      </div>
     </label>
   );
 }
