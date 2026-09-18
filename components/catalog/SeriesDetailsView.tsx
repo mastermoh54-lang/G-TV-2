@@ -99,7 +99,7 @@ export default function SeriesDetailPage() {
 
   const [seasonKey, setSeasonKey] = useState<string | null>(null);
   const [activeEpisode, setActiveEpisode] = useState<Episode | null>(null);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null); // ETAT DU LOGO
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const lastTapRef = useRef<number>(0);
@@ -107,13 +107,14 @@ export default function SeriesDetailPage() {
   const info = data?.info || data?.series_info || (data && !data.episodes ? data : {}) || {};
   const episodesBySeason = data?.episodes ?? {};
 
-  // RECHERCHE DU LOGO TMDB
+  // RECHERCHE DU LOGO TMDB / FANART AVEC TMDB_ID ET TITRE
   useEffect(() => {
-    const tmdbId = info?.tmdb_id;
-    if (!tmdbId) return;
+    const tmdbId = info?.tmdb_id || "";
+    const seriesTitle = info?.name || info?.title || "";
+    if (!tmdbId && !seriesTitle) return;
 
     let isMounted = true;
-    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&type=tv`)
+    fetch(`/api/tmdb-logo?tmdbId=${tmdbId}&title=${encodeURIComponent(seriesTitle)}&type=tv`)
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data?.logoUrl) setLogoUrl(data.logoUrl);
@@ -121,7 +122,7 @@ export default function SeriesDetailPage() {
       .catch(() => {});
 
     return () => { isMounted = false; };
-  }, [info?.tmdb_id]);
+  }, [info?.tmdb_id, info?.name, info?.title]);
 
   const seasons = useMemo(() => {
     if (!episodesBySeason) return [];
