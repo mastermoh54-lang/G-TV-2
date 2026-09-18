@@ -56,6 +56,7 @@ function WatchInner() {
     if (!rawExt && type === "movie") {
       rawExt = (movieInfo?.movie_data as any)?.container_extension;
     }
+
     if (isLive) return "m3u8";
     if (!rawExt || rawExt.toLowerCase() === "mkv") return "mp4";
     return rawExt;
@@ -88,11 +89,12 @@ function WatchInner() {
   const mediaKind = type as StreamKind;
 
   const sources = useMemo(() => {
+    const cb = Date.now(); // ANTI-CACHE ICI AUSSI
     if (isLive) {
       return [`/api/live?id=${id}`];
     }
     return [
-      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}`,
+      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`,
     ];
   }, [isLive, mediaKind, id, ext]);
 
