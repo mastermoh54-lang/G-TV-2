@@ -6,14 +6,17 @@ import { Play, Star, Clock, X, User, Info, Maximize, Video, ArrowLeft, Heart, Fi
 import { useLibrary } from "@/store/library";
 import { api } from "@/lib/api";
 import { ratingNum, yearFrom, cleanName } from "@/lib/utils";
-import { CinemaLoader } from "@/components/ui/CinemaLoader"; // LE NOUVEAU LOADER
+import { CinemaLoader } from "@/components/ui/CinemaLoader"; 
 
 function getCleanTitle(data: any): string {
   if (!data) return "Film";
   const info = data?.info || {};
   const vod = data?.movie_data || {};
   const rawTitle = info.name || vod.name || info.title || vod.title || info.o_name || "Film";
-  const cleaned = String(rawTitle).replace(/\s*\(\d{4}\)\s*$/g, "").replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "").trim();
+  const cleaned = String(rawTitle)
+    .replace(/\s*\(\d{4}\)\s*$/g, "")
+    .replace(/\s*[-|]\s*\b(19|20)\d{2}\b/g, "")
+    .trim();
   return cleaned ? cleanName(cleaned) : "Film";
 }
 
@@ -21,11 +24,13 @@ function getDurationInSeconds(data: any): number {
   if (!data) return 0;
   const info = data?.info || {};
   const vod = data?.movie_data || {};
+
   const secKeys = ["duration_secs", "length_secs", "duration_seconds"];
   for (const key of secKeys) {
     if (info[key] && !isNaN(Number(info[key]))) return Number(info[key]);
     if (vod[key] && !isNaN(Number(vod[key]))) return Number(vod[key]);
   }
+
   const strDur = info.duration || vod.duration || info.runtime || vod.runtime;
   if (strDur) {
     const cleanStr = String(strDur).toLowerCase().replace(/min/g, "").trim();
@@ -49,6 +54,7 @@ const FlipActorCard = ({ name }: { name: string }) => {
   useEffect(() => {
     let isMounted = true;
     if (!name) return;
+
     fetch(`/api/actor-photo?name=${encodeURIComponent(name)}`)
       .then((res) => res.json())
       .then((data) => {
@@ -57,7 +63,9 @@ const FlipActorCard = ({ name }: { name: string }) => {
           if (data?.bio) setBio(data.bio);
         }
       })
-      .catch(() => { if (isMounted) setBio("Information non disponible."); });
+      .catch(() => {
+        if (isMounted) setBio("Information non disponible.");
+      });
     return () => { isMounted = false; };
   }, [name]);
 
@@ -87,9 +95,10 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [tmdbTrailerKey, setTmdbTrailerKey] = useState<string | null>(null);
   const [logoState, setLogoState] = useState<{ url: string | null, loading: boolean }>({ url: null, loading: true });
   
-  const [mediaLoaded, setMediaLoaded] = useState(false); // ÉTAT POUR LE CINEMA LOADER
+  const [mediaLoaded, setMediaLoaded] = useState(false);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null); // NOUVEAU : Pour scanner l'intérieur
   const { isFav, toggleFav } = useLibrary();
 
   useEffect(() => {
@@ -106,9 +115,47 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     }).catch(() => setError(true)).finally(() => setLoading(false));
   }, [movieId]);
 
-  // Reset de l'animation quand on change de média (Film <-> Trailer)
+  // LE CŒUR DE LA MAGIE : DÉTECTION INTELLIGENTE DU FLUX AUDIO/VIDÉO
   useEffect(() => {
-    if (activeMedia) setMediaLoaded(false);
+    if (!activeMedia) return;
+    setMediaLoaded(false);
+
+    if (activeMedia === "trailer") {
+      // Pour Youtube, on met un petit délai fixe de sécurité
+      const t = setTimeout(() => setMediaLoaded(true), 1500);
+      return () => clearTimeout(t);
+    }
+
+    if (activeMedia === "movie") {
+      // Scan le lecteur IPTV toutes les 300 millisecondes
+      const interval = setInterval(() => {
+        try {
+          const iframe = iframeRef.current;
+          if (!iframe) return;
+          const doc = iframe.contentDocument || iframe.contentWindow?.document;
+          if (doc) {
+            const video = doc.querySelector("video");
+            // Si le temps de la vidéo dépasse 0 et qu'elle n'est pas en pause, LE FILM A COMMENCÉ !
+            if (video && video.currentTime > 0 && !video.paused) {
+              setMediaLoaded(true);
+              clearInterval(interval);
+            }
+          }
+        } catch (err) {
+          // Ignore DOM errors
+        }
+      }, 300);
+
+      // Sécurité anti-blocage : Si le film ne charge jamais (serveur lent), on force l'affichage après 15 secondes
+      const fallback = setTimeout(() => {
+        setMediaLoaded(true);
+      }, 15000);
+
+      return () => {
+        clearInterval(interval);
+        clearTimeout(fallback);
+      };
+    }
   }, [activeMedia]);
 
   const info = movieInfo?.info || movieInfo?.movie_data || {};
@@ -235,13 +282,12 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
               </div>
             </div>
             
-            {/* LECTEUR AVEC CINEMA LOADER */}
             <div ref={playerContainerRef} className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-white/5">
               {!mediaLoaded && <CinemaLoader />}
               {activeMedia === "movie" ? (
                 <iframe 
+                  ref={iframeRef}
                   src={watchIframeUrl} 
-                  onLoad={() => setMediaLoaded(true)}
                   className={`w-full h-full border-0 transition-opacity duration-1000 ${mediaLoaded ? "opacity-100" : "opacity-0"}`} 
                   allow="autoplay; fullscreen; picture-in-picture; encrypted-media; volume" 
                   allowFullScreen 
@@ -250,7 +296,6 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
                 <iframe 
                   src={youtubeEmbedUrl} 
                   title={`Bande-annonce ${movieTitle}`} 
-                  onLoad={() => setMediaLoaded(true)}
                   className={`w-full h-full border-0 transition-opacity duration-1000 ${mediaLoaded ? "opacity-100" : "opacity-0"}`} 
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                   allowFullScreen 
