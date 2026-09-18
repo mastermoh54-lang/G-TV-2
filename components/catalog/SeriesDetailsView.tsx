@@ -13,51 +13,25 @@ import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import type { Episode } from "@/lib/xtream/types";
 
-function EpisodeImage({
-  ep,
-  seriesTitle,
-  tmdbId,
-  seasonKey,
-  fallbackCover,
-}: {
-  ep: any;
-  seriesTitle: string;
-  tmdbId?: string | number;
-  seasonKey: string;
-  fallbackCover?: string;
-}) {
+function EpisodeImage({ ep, seriesTitle, tmdbId, seasonKey, fallbackCover }: any) {
   const [imgSrc, setImgSrc] = useState<string | null>(ep.info?.movie_image || null);
 
   useEffect(() => {
     if (ep.info?.movie_image) return;
-
     let isMounted = true;
     const cleanSeason = seasonKey.replace(/\D/g, "") || "1";
 
-    fetch(
-      `/api/episode-image?tmdbId=${tmdbId || ""}&show=${encodeURIComponent(seriesTitle)}&season=${cleanSeason}&episode=${ep.episode_num}`
-    )
+    fetch(`/api/episode-image?tmdbId=${tmdbId || ""}&show=${encodeURIComponent(seriesTitle)}&season=${cleanSeason}&episode=${ep.episode_num}`)
       .then((res) => res.json())
       .then((data) => {
-        if (isMounted && data?.imageUrl) {
-          setImgSrc(data.imageUrl);
-        }
+        if (isMounted && data?.imageUrl) setImgSrc(data.imageUrl);
       })
       .catch(() => {});
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [ep, seriesTitle, tmdbId, seasonKey]);
 
-  return (
-    <SmartImage
-      src={imgSrc || fallbackCover}
-      alt={ep.title || "Episode"}
-      rounded="rounded-lg"
-      className="h-full w-full object-cover"
-    />
-  );
+  return <SmartImage src={imgSrc || fallbackCover} alt={ep.title || "Episode"} rounded="rounded-lg" className="h-full w-full object-cover" />;
 }
 
 const FlipActorCard = ({ name }: { name: string }) => {
@@ -78,9 +52,7 @@ const FlipActorCard = ({ name }: { name: string }) => {
       .catch(() => {
         if (isMounted) setBio("Information non disponible.");
       });
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [name]);
 
   return (
@@ -95,18 +67,12 @@ const FlipActorCard = ({ name }: { name: string }) => {
       }}
       className="group perspective w-24 sm:w-28 h-36 sm:h-40 flex-shrink-0 cursor-pointer select-none focus:outline-none"
     >
-      <div
-        className={`relative w-full h-full rounded-xl transition-transform duration-500 transform-style-3d ${
-          isFlipped ? "rotate-y-180" : "group-hover:scale-105"
-        }`}
-      >
+      <div className={`relative w-full h-full rounded-xl transition-transform duration-500 transform-style-3d ${isFlipped ? "rotate-y-180" : "group-hover:scale-105"}`}>
         <div className="absolute inset-0 w-full h-full rounded-xl overflow-hidden bg-[#181a24] border border-white/10 shadow-lg backface-hidden flex flex-col justify-end">
           {photoUrl ? (
             <img src={photoUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400">
-              <User className="w-6 h-6" />
-            </div>
+            <div className="absolute inset-0 flex items-center justify-center bg-indigo-950/40 text-indigo-400"><User className="w-6 h-6" /></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
           <div className="relative z-10 p-1.5 flex items-center justify-between">
@@ -114,7 +80,6 @@ const FlipActorCard = ({ name }: { name: string }) => {
             <Info className="w-2.5 h-2.5 text-indigo-400 opacity-70 flex-shrink-0" />
           </div>
         </div>
-
         <div className="absolute inset-0 w-full h-full rounded-xl p-2 bg-gradient-to-br from-indigo-950 to-[#12141c] border border-indigo-500/40 text-white backface-hidden rotate-y-180 flex flex-col justify-between shadow-xl">
           <div className="space-y-0.5 overflow-hidden">
             <p className="text-[9px] font-bold text-indigo-300 line-clamp-1">{name}</p>
@@ -155,17 +120,23 @@ export default function SeriesDetailPage() {
   const activeSeasonKey = seasonKey ?? seasons[0] ?? null;
   const episodes = activeSeasonKey !== null ? episodesBySeason[activeSeasonKey] ?? [] : [];
 
+  // --- L'ANTI-CACHE EST ICI ---
+  // Il génère une URL unique à chaque fois que tu cliques sur un épisode
+  const activeSourceUrl = useMemo(() => {
+    if (!activeEpisode) return [];
+    const cb = Date.now();
+    return [`/api/vod?type=series&id=${activeEpisode.id}&ext=${activeEpisode.container_extension || "mp4"}&cb=${cb}`];
+  }, [activeEpisode]);
+
   const handleFullscreenLandscape = async () => {
     const elem = playerContainerRef.current;
     if (!elem) return;
-
     try {
       if (elem.requestFullscreen) {
         await elem.requestFullscreen();
       } else if ((elem as any).webkitRequestFullscreen) {
         await (elem as any).webkitRequestFullscreen();
       }
-
       if (window.screen?.orientation && "lock" in window.screen.orientation) {
         await (window.screen.orientation as any).lock("landscape").catch(() => {});
       }
@@ -301,11 +272,7 @@ export default function SeriesDetailPage() {
                 <div className="absolute inset-0 flex items-center justify-center [&>div]:w-full [&>div]:h-full [&_video]:w-full [&_video]:h-full [&_video]:object-contain">
                   <VideoPlayer
                     key={activeEpisode.id}
-                    sources={[
-                      `/api/vod?type=series&id=${activeEpisode.id}&ext=${
-                        activeEpisode.container_extension || "mp4"
-                      }`
-                    ]}
+                    sources={activeSourceUrl}
                     ext="mp4"
                     isLive={false}
                     title={`${title} - S${activeEpisode.season || activeSeasonKey}E${activeEpisode.episode_num}`}
