@@ -1,3 +1,4 @@
+// next.config.ts sur gtv-cloudflare
 import type { NextConfig } from 'next';
 
 const VERCEL_URL = process.env.NEXT_PUBLIC_VERCEL_URL || 'https://g-tv-2.vercel.app';
@@ -9,9 +10,9 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
-      // NOTE: /api/xtream, /api/image-proxy et /api/actor-photo sont gérés en local par Cloudflare Pages
-
-      // --- 1. BACKEND VERCEL (Uniquement le Flux Live TV, EPG & Segments Video) ---
+      // --- VERCEL (Gestion Xtream, Live TV & EPG pour éviter la surcharge RAM Cloudflare) ---
+      { source: '/api/xtream', destination: `${VERCEL_URL}/api/xtream` },
+      { source: '/api/xtream/:path*', destination: `${VERCEL_URL}/api/xtream/:path*` },
       { source: '/api/live', destination: `${VERCEL_URL}/api/live` },
       { source: '/api/live/:path*', destination: `${VERCEL_URL}/api/live/:path*` },
       { source: '/api/hls', destination: `${VERCEL_URL}/api/hls` },
@@ -21,7 +22,7 @@ const nextConfig: NextConfig = {
       { source: '/api/epg', destination: `${VERCEL_URL}/api/epg` },
       { source: '/api/epg/:path*', destination: `${VERCEL_URL}/api/epg/:path*` },
 
-      // --- 2. BACKEND RAILWAY (VOD Films, Séries & Transcodage FFmpeg) ---
+      // --- RAILWAY (VOD Films, Séries & FFmpeg) ---
       { source: '/api/vod', destination: `${RAILWAY_URL}/api/vod` },
       { source: '/api/vod/:path*', destination: `${RAILWAY_URL}/api/vod/:path*` },
       { source: '/api/show', destination: `${RAILWAY_URL}/api/show` },
