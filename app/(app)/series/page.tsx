@@ -37,11 +37,11 @@ export default function SeriesPage() {
     setMounted(true);
   }, []);
 
-  // Pendant le premier rendu serveur (Worker Cloudflare), on envoie juste le Skeleton sans charger de données
+  // Sur le serveur Cloudflare, on renvoie uniquement le Skeleton (0 Mo de RAM consommée)
   if (!mounted) {
     return <PageSkeleton />;
   }
 
-  // Le chargement des séries se fait uniquement côté navigateur
+  // Le chargement de la liste des séries s'exécute exclusivement dans le navigateur client
   return <SeriesCatalogContent />;
 }
