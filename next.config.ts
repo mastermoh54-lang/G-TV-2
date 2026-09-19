@@ -6,7 +6,31 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
-      // --- VERCEL (Live & Xtream) ---
+      // --- VERCEL : Xtream, Live TV, HLS, EPG ---
+      {
+        source: '/api/xtream',
+        destination: 'https://g-tv-2.vercel.app/api/xtream',
+      },
+      {
+        source: '/api/xtream/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/xtream/:path*',
+      },
+      {
+        source: '/api/live',
+        destination: 'https://g-tv-2.vercel.app/api/live',
+      },
+      {
+        source: '/api/live/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/live/:path*',
+      },
+      {
+        source: '/api/epg',
+        destination: 'https://g-tv-2.vercel.app/api/epg',
+      },
+      {
+        source: '/api/epg/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/epg/:path*',
+      },
       {
         source: '/api/hls',
         destination: 'https://g-tv-2.vercel.app/api/hls',
@@ -23,16 +47,8 @@ const nextConfig: NextConfig = {
         source: '/api/hlsseg/:path*',
         destination: 'https://g-tv-2.vercel.app/api/hlsseg/:path*',
       },
-      {
-        source: '/api/live/:path*',
-        destination: 'https://g-tv-2.vercel.app/api/live/:path*',
-      },
-      {
-        source: '/api/xtream/:path*',
-        destination: 'https://g-tv-2.vercel.app/api/xtream/:path*',
-      },
 
-      // --- RAILWAY (VOD & Show) ---
+      // --- RAILWAY : VOD Films & Séries (Show) ---
       {
         source: '/api/vod',
         destination: 'https://g-tv-2-production.up.railway.app/api/vod',
@@ -48,6 +64,14 @@ const nextConfig: NextConfig = {
       {
         source: '/api/show/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/show/:path*',
+      },
+      {
+        source: '/api/stream',
+        destination: 'https://g-tv-2-production.up.railway.app/api/stream',
+      },
+      {
+        source: '/api/stream/:path*',
+        destination: 'https://g-tv-2-production.up.railway.app/api/stream/:path*',
       },
     ];
   },
