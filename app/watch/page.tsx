@@ -88,6 +88,7 @@ function WatchInner() {
 
   const mediaKind = type as StreamKind;
 
+  // Injection dynamique des identifiants Xtream pour Railway
   const sources = useMemo(() => {
     const cb = Date.now();
     
@@ -95,13 +96,28 @@ function WatchInner() {
       return [`/api/live?id=${id}`];
     }
     
-    // POINTE VERS LA NOUVELLE API SANS CONFLIT
+    let authParams = "";
+    if (typeof window !== "undefined") {
+      try {
+        const rawAuth = localStorage.getItem("gtv_auth") || localStorage.getItem("xtream_session");
+        if (rawAuth) {
+          const auth = JSON.parse(rawAuth);
+          const s = auth.serverUrl || auth.server || auth.host || "";
+          const u = auth.username || auth.user || "";
+          const p = auth.password || auth.pass || "";
+          if (s && u && p) {
+            authParams = `&server=${encodeURIComponent(s)}&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`;
+          }
+        }
+      } catch {}
+    }
+
     if (mediaKind === "series") {
-      return [`/api/show?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`];
+      return [`/api/show?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}${authParams}`];
     }
     
     return [
-      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}`,
+      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}${authParams}`,
     ];
   }, [isLive, mediaKind, id, ext]);
 
