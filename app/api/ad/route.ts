@@ -5,11 +5,13 @@ export async function GET(request: NextRequest) {
   const media = searchParams.get("media") || "movie";
   const slot = searchParams.get("slot");
 
-  const baseUrl = process.env.PHP_ADSERVER_URL || "http://gmz.page.gd/api.php";
+  // Hôte principal Alwaysdata
+  const ALWAYS_DATA_DOMAIN = "https://gmz.alwaysdata.net";
+  const baseUrl = process.env.PHP_ADSERVER_URL || `${ALWAYS_DATA_DOMAIN}/api.php`;
 
-  let phpApiUrl = `${baseUrl}?media=${media}`;
+  let phpApiUrl = `${baseUrl}?media=${encodeURIComponent(media)}`;
   if (slot) {
-    phpApiUrl += `&slot=${slot}`;
+    phpApiUrl += `&slot=${encodeURIComponent(slot)}`;
   }
 
   try {
@@ -24,25 +26,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: "empty", message: "AdServer indisponible" });
     }
 
-    // Récupération de la réponse brute
-    const rawText = await res.text();
+    // Lecture directe du JSON propre sur Alwaysdata
+    const data = await res.json();
 
-    // Extraction stricte du JSON situé entre la première '{' et la dernière '}'
-    const startIndex = rawText.indexOf("{");
-    const endIndex = rawText.lastIndexOf("}");
-
-    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-      return NextResponse.json({ status: "empty", message: "Réponse JSON introuvable" });
-    }
-
-    const cleanJson = rawText.substring(startIndex, endIndex + 1);
-    const data = JSON.parse(cleanJson);
-
-    // Ajustement de l'URL vidéo en HTTPS
+    // Normalisation de l'URL de la vidéo vers Alwaysdata
     if (data?.ad?.video_url) {
       let rawUrl = data.ad.video_url;
       if (!rawUrl.startsWith("http")) {
-        rawUrl = `https://gmz.page.gd/${rawUrl.replace(/^\//, "")}`;
+        rawUrl = `${ALWAYS_DATA_DOMAIN}/${rawUrl.replace(/^\//, "")}`;
       } else {
         rawUrl = rawUrl.replace(/^http:\/\//i, "https://");
       }
