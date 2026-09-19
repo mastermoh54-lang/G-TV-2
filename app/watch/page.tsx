@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
-import { resolveSrc, api } from "@/lib/api";
+import { resolveSrc, api, streamSrc } from "@/lib/api";
 import { useSeriesInfo } from "@/lib/hooks";
 import { useLibrary } from "@/store/library";
 import { parseDurationToSeconds } from "@/lib/utils";
@@ -88,37 +88,15 @@ function WatchInner() {
 
   const mediaKind = type as StreamKind;
 
-  // Génération des URLs de flux avec injection automatique des paramètres de connexion Xtream
+  // Source du flux dirigée vers Vercel (Live) et Railway (Movie/Series)
   const sources = useMemo(() => {
-    const cb = Date.now();
-    
     if (isLive) {
-      return [`/api/live?id=${id}`];
+      return [streamSrc("live", id, "m3u8")];
     }
-    
-    let authParams = "";
-    if (typeof window !== "undefined") {
-      try {
-        const rawAuth = localStorage.getItem("gtv_auth") || localStorage.getItem("xtream_session");
-        if (rawAuth) {
-          const auth = JSON.parse(rawAuth);
-          const s = auth.serverUrl || auth.server || auth.host || "";
-          const u = auth.username || auth.user || "";
-          const p = auth.password || auth.pass || "";
-          if (s && u && p) {
-            authParams = `&server=${encodeURIComponent(s)}&username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`;
-          }
-        }
-      } catch {}
-    }
-
     if (mediaKind === "series") {
-      return [`/api/show?id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}${authParams}`];
+      return [streamSrc("series", id, ext)];
     }
-    
-    return [
-      `/api/vod?type=${mediaKind}&id=${id}&ext=${encodeURIComponent(ext)}&cb=${cb}${authParams}`,
-    ];
+    return [streamSrc("movie", id, ext)];
   }, [isLive, mediaKind, id, ext]);
 
   const recentedRef = useRef(false);
