@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
-      // 1. Live TV, Xtream, Flux HLS, Segments et Proxy Images vers VERCEL
+      // --- VERCEL (Live TV, Xtream, EPG, HLS, HLSSEG, Image-Proxy) ---
       {
         source: '/api/live/:path*',
         destination: 'https://g-tv-2.vercel.app/api/live/:path*',
@@ -14,6 +14,10 @@ const nextConfig: NextConfig = {
       {
         source: '/api/xtream/:path*',
         destination: 'https://g-tv-2.vercel.app/api/xtream/:path*',
+      },
+      {
+        source: '/api/epg/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/epg/:path*',
       },
       {
         source: '/api/hls/:path*',
@@ -32,14 +36,15 @@ const nextConfig: NextConfig = {
         destination: 'https://g-tv-2.vercel.app/api/hlsseg',
       },
       {
-        source: '/api/image-proxy',
-        destination: 'https://g-tv-2.vercel.app/api/image-proxy',
-      },
-      {
         source: '/api/image-proxy/:path*',
         destination: 'https://g-tv-2.vercel.app/api/image-proxy/:path*',
       },
-      // 2. Films, Séries et Transcodage VOD vers RAILWAY
+      {
+        source: '/api/image-proxy',
+        destination: 'https://g-tv-2.vercel.app/api/image-proxy',
+      },
+
+      // --- RAILWAY (Films, Séries, Stream VOD) ---
       {
         source: '/api/vod/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/vod/:path*',
@@ -51,6 +56,10 @@ const nextConfig: NextConfig = {
       {
         source: '/api/stream/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/stream/:path*',
+      },
+      {
+        source: '/api/show/:path*',
+        destination: 'https://g-tv-2-production.up.railway.app/api/show/:path*',
       },
     ];
   },
