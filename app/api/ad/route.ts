@@ -5,7 +5,7 @@ export async function GET(request: NextRequest) {
   const media = searchParams.get("media") || "movie";
   const slot = searchParams.get("slot");
 
-  // URL de l'AdServer récupérée dynamiquement depuis les variables Vercel
+  // Ingestion depuis la variable serveur Vercel privée
   const baseUrl = process.env.PHP_ADSERVER_URL || "http://gmz.page.gd/api.php";
 
   let phpApiUrl = `${baseUrl}?media=${media}`;
@@ -27,14 +27,20 @@ export async function GET(request: NextRequest) {
 
     const data = await res.json();
 
-    // Traitement dynamique de l'URL vidéo sans exposer le serveur
-    if (data?.ad?.video_url && !data.ad.video_url.startsWith("http")) {
-      data.ad.video_url = `https://gmz.page.gd/${data.ad.video_url.replace(/^\//, "")}`;
+    // Normalisation HTTPS pour les vidéos MP4
+    if (data?.ad?.video_url) {
+      let rawUrl = data.ad.video_url;
+      if (!rawUrl.startsWith("http")) {
+        rawUrl = `https://gmz.page.gd/${rawUrl.replace(/^\//, "")}`;
+      } else {
+        rawUrl = rawUrl.replace(/^http:\/\//i, "https://");
+      }
+      data.ad.video_url = rawUrl;
     }
 
     return NextResponse.json(data);
   } catch (error) {
-    // Interception silencieuse : masque la trace d'erreur et évite le code HTTP 500
-    return NextResponse.json({ status: "empty", message: "Erreur de connexion AdServer" });
+    // Évite l'affichage d'erreurs 500 HTML dans la console
+    return NextResponse.json({ status: "empty", message: "Erreur AdServer interceptée" });
   }
 }
