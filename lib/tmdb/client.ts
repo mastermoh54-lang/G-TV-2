@@ -1,9 +1,7 @@
 // Client-side TMDB client for Pure SPA.
-// Browse layer for instant, paginated discovery.
 
 const BASE = "https://api.themoviedb.org/3";
 
-// Récupération des clés côté client
 const TMDB_BEARER = process.env.NEXT_PUBLIC_TMDB_BEARER || "";
 const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || "7b311a6f43090b24f188272bcc0655b3";
 
@@ -34,7 +32,6 @@ export async function tmdb<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-/** Allow-list of TMDB paths the client may call. */
 export function isAllowedPath(path: string): boolean {
   return /^(trending|movie|tv|discover|search|genre|person)\//.test(path) || path === "configuration";
 }
