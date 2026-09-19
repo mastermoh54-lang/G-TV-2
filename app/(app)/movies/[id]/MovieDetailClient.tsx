@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Play, Star, Clock, X, User, Info, Maximize, Video, ArrowLeft, Heart, Film } from "lucide-react";
 import { useLibrary } from "@/store/library";
 import { api } from "@/lib/api";
+import { tmdb } from "@/lib/tmdb";
 import { ratingNum, yearFrom, cleanName } from "@/lib/utils";
 import { CinemaLoader } from "@/components/ui/CinemaLoader"; 
 
@@ -55,17 +56,23 @@ const FlipActorCard = ({ name }: { name: string }) => {
     let isMounted = true;
     if (!name) return;
 
-    fetch(`/api/actor-photo?name=${encodeURIComponent(name)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted) {
-          if (data?.photoUrl) setPhotoUrl(data.photoUrl);
-          if (data?.bio) setBio(data.bio);
+    async function loadActor() {
+      try {
+        const data = await tmdb<any>("search/person", { query: name, language: "fr-FR" });
+        const person = data?.results?.[0];
+        if (isMounted && person) {
+          if (person.profile_path) setPhotoUrl(`https://image.tmdb.org/t/p/w300${person.profile_path}`);
+          if (person.known_for_department) setBio(`Acteur principal / ${person.known_for_department}`);
+          else setBio("Acteur de cinéma.");
+        } else if (isMounted) {
+          setBio("Information non disponible.");
         }
-      })
-      .catch(() => {
+      } catch (err) {
         if (isMounted) setBio("Information non disponible.");
-      });
+      }
+    }
+
+    loadActor();
     return () => { isMounted = false; };
   }, [name]);
 
@@ -98,7 +105,7 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const [mediaLoaded, setMediaLoaded] = useState(false);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null); // NOUVEAU : Pour scanner l'intérieur
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const { isFav, toggleFav } = useLibrary();
 
   useEffect(() => {
@@ -115,19 +122,16 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     }).catch(() => setError(true)).finally(() => setLoading(false));
   }, [movieId]);
 
-  // LE CŒUR DE LA MAGIE : DÉTECTION INTELLIGENTE DU FLUX AUDIO/VIDÉO
   useEffect(() => {
     if (!activeMedia) return;
     setMediaLoaded(false);
 
     if (activeMedia === "trailer") {
-      // Pour Youtube, on met un petit délai fixe de sécurité
       const t = setTimeout(() => setMediaLoaded(true), 1500);
       return () => clearTimeout(t);
     }
 
     if (activeMedia === "movie") {
-      // Scan le lecteur IPTV toutes les 300 millisecondes
       const interval = setInterval(() => {
         try {
           const iframe = iframeRef.current;
@@ -135,18 +139,14 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
           const doc = iframe.contentDocument || iframe.contentWindow?.document;
           if (doc) {
             const video = doc.querySelector("video");
-            // Si le temps de la vidéo dépasse 0 et qu'elle n'est pas en pause, LE FILM A COMMENCÉ !
             if (video && video.currentTime > 0 && !video.paused) {
               setMediaLoaded(true);
               clearInterval(interval);
             }
           }
-        } catch (err) {
-          // Ignore DOM errors
-        }
+        } catch (err) {}
       }, 300);
 
-      // Sécurité anti-blocage : Si le film ne charge jamais (serveur lent), on force l'affichage après 15 secondes
       const fallback = setTimeout(() => {
         setMediaLoaded(true);
       }, 15000);
@@ -170,16 +170,37 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
   const isFavorite = Boolean(streamId && isFav && typeof isFav === "function" ? isFav("movie", Number(streamId)) : false);
   const tmdbId = info?.tmdb_id || vodData?.tmdb_id;
 
+  // TMDB Trailer direct Client Fetch
   useEffect(() => {
     if (!movieTitle || movieTitle.toLowerCase() === "film") return;
     let isMounted = true;
-    fetch(`/api/tmdb-trailer?title=${encodeURIComponent(movieTitle)}&year=${year || ""}&tmdbId=${tmdbId || ""}&lang=${currentLang}`)
-      .then((res) => res.json())
-      .then((data) => { if (isMounted && data?.key) setTmdbTrailerKey(data.key); })
-      .catch(() => {});
+
+    async function loadTrailer() {
+      try {
+        let tKey: string | null = null;
+        if (tmdbId) {
+          const res = await tmdb<any>(`movie/${tmdbId}/videos`, { language: currentLang });
+          const trailer = res?.results?.find((v: any) => v.type === "Trailer" && v.site === "YouTube");
+          if (trailer) tKey = trailer.key;
+        }
+        if (!tKey) {
+          const searchData = await tmdb<any>("search/movie", { query: movieTitle, year: year || undefined, language: currentLang });
+          const firstMovie = searchData?.results?.[0];
+          if (firstMovie?.id) {
+            const res = await tmdb<any>(`movie/${firstMovie.id}/videos`, { language: currentLang });
+            const trailer = res?.results?.find((v: any) => v.type === "Trailer" && v.site === "YouTube");
+            if (trailer) tKey = trailer.key;
+          }
+        }
+        if (isMounted && tKey) setTmdbTrailerKey(tKey);
+      } catch (e) {}
+    }
+
+    loadTrailer();
     return () => { isMounted = false; };
   }, [movieTitle, year, tmdbId, currentLang]);
 
+  // TMDB Logo direct Client Fetch
   useEffect(() => {
     const idToSearch = tmdbId || "";
     const titleToSearch = movieTitle || "";
@@ -189,10 +210,32 @@ export function MovieDetailClient({ movieId }: { movieId: string }) {
     }
     let isMounted = true;
     setLogoState({ url: null, loading: true });
-    fetch(`/api/tmdb-logo?tmdbId=${idToSearch}&title=${encodeURIComponent(titleToSearch)}&type=movie`)
-      .then((res) => res.json())
-      .then((data) => { if (isMounted) setLogoState({ url: data?.logoUrl || null, loading: false }); })
-      .catch(() => { if (isMounted) setLogoState({ url: null, loading: false }); });
+
+    async function loadLogo() {
+      try {
+        let logoUrl: string | null = null;
+        let targetTmdbId = idToSearch;
+
+        if (!targetTmdbId && titleToSearch) {
+          const searchRes = await tmdb<any>("search/movie", { query: titleToSearch });
+          targetTmdbId = searchRes?.results?.[0]?.id;
+        }
+
+        if (targetTmdbId) {
+          const imagesRes = await tmdb<any>(`movie/${targetTmdbId}/images`, { include_image_language: "fr,en,null" });
+          const logo = imagesRes?.logos?.[0];
+          if (logo?.file_path) {
+            logoUrl = `https://image.tmdb.org/t/p/w500${logo.file_path}`;
+          }
+        }
+
+        if (isMounted) setLogoState({ url: logoUrl, loading: false });
+      } catch (e) {
+        if (isMounted) setLogoState({ url: null, loading: false });
+      }
+    }
+
+    loadLogo();
     return () => { isMounted = false; };
   }, [tmdbId, movieTitle]);
 
