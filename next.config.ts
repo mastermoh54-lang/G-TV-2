@@ -44,14 +44,26 @@ const nextConfig: NextConfig = {
         destination: 'https://g-tv-2.vercel.app/api/image-proxy',
       },
 
-      // --- RAILWAY : VOD Films & Séries (Show) ---
+      // --- RAILWAY : VOD Films & Séries (avec sous-routes hls/stream) ---
+      {
+        source: '/api/vod',
+        destination: 'https://g-tv-2-production.up.railway.app/api/vod',
+      },
       {
         source: '/api/vod/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/vod/:path*',
       },
       {
+        source: '/api/show',
+        destination: 'https://g-tv-2-production.up.railway.app/api/show',
+      },
+      {
         source: '/api/show/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/show/:path*',
+      },
+      {
+        source: '/api/stream',
+        destination: 'https://g-tv-2-production.up.railway.app/api/stream',
       },
       {
         source: '/api/stream/:path*',
