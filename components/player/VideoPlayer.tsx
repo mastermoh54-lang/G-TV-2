@@ -11,6 +11,10 @@ import { formatTime, cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+// Hôtes distants pour contourner le Worker Edge de Cloudflare
+const VERCEL_HOST = process.env.NEXT_PUBLIC_VERCEL_URL || "https://g-tv-2.vercel.app";
+const RAILWAY_HOST = process.env.NEXT_PUBLIC_RAILWAY_URL || "https://g-tv-2-production.up.railway.app";
+
 // Compteur global de zapping Live
 let liveZapCount = 0;
 
@@ -86,9 +90,20 @@ export function VideoPlayer({
   const [seekBase, setSeekBase] = useState(0);
   const [scrub, setScrub] = useState<number | null>(null);
 
+  // --- TRAITEMENT ET ROUTAGE DE LA SOURCE PAR BACKEND ---
   let rawSrc = sources[srcIdx] ?? sources[0];
+
   if (rawSrc && rawSrc.includes("/api/transcode")) {
     rawSrc = rawSrc.replace("/api/transcode", "/api/show");
+  }
+
+  // Redirection forcée vers Vercel ou Railway pour Cloudflare Pages
+  if (rawSrc && rawSrc.startsWith("/api/")) {
+    if (isLive || rawSrc.startsWith("/api/hls") || rawSrc.startsWith("/api/hlsseg") || rawSrc.startsWith("/api/live") || rawSrc.startsWith("/api/xtream")) {
+      rawSrc = `${VERCEL_HOST}${rawSrc}`;
+    } else if (rawSrc.startsWith("/api/vod") || rawSrc.startsWith("/api/show") || rawSrc.startsWith("/api/stream")) {
+      rawSrc = `${RAILWAY_HOST}${rawSrc}`;
+    }
   }
 
   const isTranscode = !!rawSrc && (rawSrc.includes("/api/vod") || rawSrc.includes("/api/show"));
@@ -125,12 +140,8 @@ export function VideoPlayer({
         return;
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API || "/api/ad";
-      const baseUrl = apiUrl.startsWith("http")
-        ? apiUrl
-        : `${window.location.origin}${apiUrl}`;
-      
-      const endpoint = `${baseUrl}?media=${currentMedia}&slot=Mid-Roll`;
+      // Appel direct vers Alwaysdata sans passer par l'Edge Cloudflare
+      const endpoint = `https://gmz.alwaysdata.net/api.php?media=${currentMedia}&slot=Mid-Roll`;
 
       try {
         const response = await fetch(endpoint, { cache: "no-store" });
@@ -156,7 +167,7 @@ export function VideoPlayer({
     };
   }, [currentMedia, sources, isLive]);
 
-  // --- MINUTEUR POUR LANCER LA PUB SUR LES CHAÎNES LIVE (EX: 30S / 50S) ---
+  // --- MINUTEUR POUR LANCER LA PUB SUR LES CHAÎNES LIVE ---
   useEffect(() => {
     if (!isLive || liveZapCount <= 1 || !adConfig || adPlayed) return;
 
@@ -252,7 +263,6 @@ export function VideoPlayer({
       setCurrent(curTime);
       setDuration(v.duration || 0);
 
-      // Déclenchement VOD / Séries au temps configuré dans le panneau
       if (
         !isLive &&
         adConfig &&
@@ -511,7 +521,7 @@ export function VideoPlayer({
         {subUrl && <track kind="subtitles" src={subUrl} label={subName || "Loaded file"} />}
       </video>
 
-      {/* OVERLAY PUBLICITAIRE EN PLEIN ÉCRAN AVEC DÉCOMPTE (VOD / SÉRIES / LIVE) */}
+      {/* OVERLAY PUBLICITAIRE EN PLEIN ÉCRAN AVEC DÉCOMPTE */}
       {isPlayingAd && adConfig?.url && (
         <div className="relative h-full w-full bg-black z-10">
           <video
