@@ -95,7 +95,7 @@ export function VideoPlayer({
   const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
-  // Determination dynamique du type de média transmis à l'AdServer
+  // Détermination dynamique du type de média transmis à l'AdServer
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
   useEffect(() => {
@@ -104,27 +104,33 @@ export function VideoPlayer({
     hasFetchedAdRef.current = false;
   }, [sources, startTime]);
 
-  // --- APPEL ADSERVER DYNAMIQUE (SANS SLOT EN DUR) ---
+  // --- APPEL ADSERVER SÉCURISÉ HTTPS (PROXY VERCEL) ---
   useEffect(() => {
     if (hasFetchedAdRef.current) return;
 
     const fetchAd = async () => {
-      const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API;
-      if (!apiUrl) return;
+      const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API || "/api/ad";
 
       hasFetchedAdRef.current = true;
 
       try {
-        // Ingestion dynamique sans slot forcé en dur
-        const response = await fetch(`${apiUrl}?media=${currentMedia}`);
+        const endpoint = apiUrl.startsWith("http")
+          ? `${apiUrl}?media=${currentMedia}`
+          : `${window.location.origin}${apiUrl}?media=${currentMedia}`;
+
+        const response = await fetch(endpoint);
         const data = await response.json();
 
         if (data.status === "success" && data.ad && data.ad.video_url) {
           let fullAdUrl = data.ad.video_url;
+
+          // Conversion explicite en HTTPS pour éliminer le Mixed Content
           if (!fullAdUrl.startsWith("http")) {
-            const apiBaseDomain = new URL(apiUrl).origin;
-            fullAdUrl = `${apiBaseDomain}/${fullAdUrl.replace(/^\//, "")}`;
+            fullAdUrl = `https://gmz.page.gd/${fullAdUrl.replace(/^\//, "")}`;
+          } else {
+            fullAdUrl = fullAdUrl.replace(/^http:\/\//i, "https://");
           }
+
           setAdVideoUrl(fullAdUrl);
           setIsPlayingAd(true);
         } else {
@@ -154,7 +160,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT DU FLUX PRINCIPAL ---
+  // --- ATTACHEMENT DU FLUX PRINCIPAL (EN PAUSE TANT QUE LA PUB TOURNE) ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src || isPlayingAd) return;
@@ -452,7 +458,7 @@ export function VideoPlayer({
           </div>
         </div>
       ) : (
-        /* VIDEO PRINCIPALE */
+        /* VIDÉO PRINCIPALE */
         <video
           ref={videoRef}
           poster={poster}
@@ -502,7 +508,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* OVERLAY CONTRÔLES */}
+      {/* OVERLAY CONTRÔLES HAUT */}
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 flex items-start gap-3 bg-gradient-to-b from-black/80 to-transparent px-5 pb-12 pt-5 transition-opacity sm:px-8 z-20",
@@ -525,6 +531,7 @@ export function VideoPlayer({
         </div>
       </div>
 
+      {/* OVERLAY CONTRÔLES BAS */}
       {!isPlayingAd && (
         <div
           className={cn(
