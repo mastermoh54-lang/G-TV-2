@@ -9,6 +9,7 @@ import { useUI, DEFAULT_FILTER } from "@/store/ui";
 import { sortItems, cleanName, cn } from "@/lib/utils";
 import type { LiveStream } from "@/lib/xtream/types";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
+import { streamSrc } from "@/lib/api";
 
 export function LiveBrowser() {
   const { data: allCats = [] } = useLiveCategories();
@@ -57,10 +58,10 @@ export function LiveBrowser() {
     return sortItems(items, sort);
   }, [data, query, sort]);
 
-  // Source Live envoyée vers la route HLS
+  // Source Live envoyée vers Vercel (HLS/m3u8)
   const liveSources = useMemo(() => {
     if (!activeChannel?.stream_id) return [];
-    return [`/api/hls?id=${activeChannel.stream_id}`];
+    return [streamSrc("live", activeChannel.stream_id, "m3u8")];
   }, [activeChannel]);
 
   const watchDedicatedUrl = activeChannel
