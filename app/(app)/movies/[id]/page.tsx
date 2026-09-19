@@ -1,7 +1,7 @@
 import { MovieDetailClient } from "./MovieDetailClient";
 
 export async function generateStaticParams() {
-  return [];
+  return [{ id: "placeholder" }];
 }
 
 export default async function MovieDetailPage({
