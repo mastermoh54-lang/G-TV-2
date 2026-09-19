@@ -55,7 +55,7 @@ export function VideoPlayer({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subFileRef = useRef<HTMLInputElement>(null);
 
-  // --- ÉTATS ADSERVER (STYLE PRIME VIDEO) ---
+  // --- ÉTATS ADSERVER ---
   const [adVideoUrl, setAdVideoUrl] = useState<string | null>(null);
   const [isPlayingAd, setIsPlayingAd] = useState<boolean>(false);
   const [adDuration, setAdDuration] = useState<number>(0);
@@ -95,7 +95,7 @@ export function VideoPlayer({
   const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
-  // Détermination dynamique du type de média transmis à l'AdServer
+  // Type de média calculé automatiquement
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function VideoPlayer({
     hasFetchedAdRef.current = false;
   }, [sources, startTime]);
 
-  // --- APPEL ADSERVER SÉCURISÉ HTTPS (PROXY VERCEL) ---
+  // --- APPEL DE L'ADSERVER VIA LE PROXY LOCAL ---
   useEffect(() => {
     if (hasFetchedAdRef.current) return;
 
@@ -114,30 +114,23 @@ export function VideoPlayer({
       hasFetchedAdRef.current = true;
 
       try {
-        const endpoint = apiUrl.startsWith("http")
-          ? `${apiUrl}?media=${currentMedia}`
-          : `${window.location.origin}${apiUrl}?media=${currentMedia}`;
-
+        const endpoint = `${window.location.origin}${apiUrl}?media=${currentMedia}`;
         const response = await fetch(endpoint);
+
+        if (!response.ok) {
+          setIsPlayingAd(false);
+          return;
+        }
+
         const data = await response.json();
 
         if (data.status === "success" && data.ad && data.ad.video_url) {
-          let fullAdUrl = data.ad.video_url;
-
-          // Conversion explicite en HTTPS pour éliminer le Mixed Content
-          if (!fullAdUrl.startsWith("http")) {
-            fullAdUrl = `https://gmz.page.gd/${fullAdUrl.replace(/^\//, "")}`;
-          } else {
-            fullAdUrl = fullAdUrl.replace(/^http:\/\//i, "https://");
-          }
-
-          setAdVideoUrl(fullAdUrl);
+          setAdVideoUrl(data.ad.video_url);
           setIsPlayingAd(true);
         } else {
           setIsPlayingAd(false);
         }
       } catch (err) {
-        console.error("Erreur AdServer :", err);
         setIsPlayingAd(false);
       }
     };
@@ -160,7 +153,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT DU FLUX PRINCIPAL (EN PAUSE TANT QUE LA PUB TOURNE) ---
+  // --- ATTACHEMENT DE LA VIDÉO PRINCIPALE ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src || isPlayingAd) return;
@@ -407,7 +400,7 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCurrent, volume, seekable, isPlayingAd, togglePlay, seek, toggleFs, toggleMute, onBack, showControls, trackList, activeTrack, selectTrack, hasNext, onNext]);
 
-  // --- GESTION DU DÉCOMPTE PUB (STYLE PRIME VIDEO) ---
+  // --- DÉCOMPTE PUB (STYLE PRIME VIDEO) ---
   const handleAdLoadedMetadata = () => {
     if (adVideoRef.current) {
       setAdDuration(Math.floor(adVideoRef.current.duration));
@@ -436,7 +429,7 @@ export function VideoPlayer({
         controlsOn ? "cursor-default" : "cursor-none",
       )}
     >
-      {/* OVERLAY PUBLICITAIRE STYLE PRIME VIDEO */}
+      {/* OVERLAY PUBLICITAIRE PRIME VIDEO */}
       {isPlayingAd && adVideoUrl ? (
         <div className="relative h-full w-full bg-black">
           <video
@@ -449,7 +442,7 @@ export function VideoPlayer({
             onEnded={handleAdEnded}
             className="h-full w-full object-contain"
           />
-          {/* Badge discret Prime Video */}
+          {/* Badge Prime Video */}
           <div className="pointer-events-none absolute bottom-10 left-8 z-30 flex items-center gap-3 rounded-lg border border-white/10 bg-black/60 px-4 py-2 font-sans text-sm font-semibold tracking-wide text-white backdrop-blur-md shadow-2xl">
             <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse" />
             <span>Publicité</span>
@@ -458,7 +451,7 @@ export function VideoPlayer({
           </div>
         </div>
       ) : (
-        /* VIDÉO PRINCIPALE */
+        /* FLUX PRINCIPAL */
         <video
           ref={videoRef}
           poster={poster}
@@ -508,7 +501,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* OVERLAY CONTRÔLES HAUT */}
+      {/* EN-TÊTE CONTRÔLES */}
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 flex items-start gap-3 bg-gradient-to-b from-black/80 to-transparent px-5 pb-12 pt-5 transition-opacity sm:px-8 z-20",
@@ -531,7 +524,7 @@ export function VideoPlayer({
         </div>
       </div>
 
-      {/* OVERLAY CONTRÔLES BAS */}
+      {/* PIED DE PAGE CONTRÔLES */}
       {!isPlayingAd && (
         <div
           className={cn(
