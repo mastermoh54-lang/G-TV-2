@@ -5,8 +5,10 @@ export async function GET(request: NextRequest) {
   const media = searchParams.get("media") || "movie";
   const slot = searchParams.get("slot");
 
-  // Endpoint externe de l'AdServer PHP
-  let phpApiUrl = `http://gmz.page.gd/api.php?media=${media}`;
+  // Récupération dynamique depuis les variables Vercel
+  const baseUrl = process.env.PHP_ADSERVER_URL || "http://gmz.page.gd/api.php";
+
+  let phpApiUrl = `${baseUrl}?media=${media}`;
   if (slot) {
     phpApiUrl += `&slot=${slot}`;
   }
@@ -24,8 +26,8 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await res.json();
-    
-    // Si la vidéo est renvoyée en chemin relatif, on reconstruit dynamiquement le lien HTTPS
+
+    // S'assurer que le lien vidéo retourné est accessible en HTTPS si nécessaire
     if (data?.ad?.video_url && !data.ad.video_url.startsWith("http")) {
       data.ad.video_url = `https://gmz.page.gd/${data.ad.video_url.replace(/^\//, "")}`;
     }
@@ -33,7 +35,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Erreur Proxy AdServer :", error);
-    // Renvoie un statut 200 avec status: empty pour éviter de faire crasher le lecteur vidéo
     return NextResponse.json({ status: "empty", message: "Erreur de connexion AdServer" });
   }
 }
