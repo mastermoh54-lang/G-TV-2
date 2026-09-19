@@ -1,4 +1,4 @@
-// Client-side fetchers — all same-origin, hitting our proxy routes.
+// Client-side fetchers — dynamic routing between Cloudflare SPA, Vercel (Live) and Railway (VOD/Xtream)
 import type {
   AuthResponse,
   Category,
@@ -11,8 +11,37 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
+// Dynamic domain resolution for back-ends
+const RAILWAY_URL = process.env.NEXT_PUBLIC_RAILWAY_URL || "";
+const VERCEL_URL = process.env.NEXT_PUBLIC_VERCEL_URL || process.env.NEXT_PUBLIC_LIVE_URL || "https://g-tv-2.vercel.app";
+
+/**
+ * Détermine le serveur cible selon le type de requête :
+ * - Live / Auth / EPG -> Vercel (https://g-tv-2.vercel.app)
+ * - VOD / Séries / Catalogue -> Railway (NEXT_PUBLIC_RAILWAY_URL)
+ */
+function getTargetBaseUrl(path: string): string {
+  if (typeof window === "undefined") return "";
+
+  const isCloudflare =
+    window.location.hostname.includes("workers.dev") ||
+    window.location.hostname.includes("pages.dev");
+
+  if (!isCloudflare) return "";
+
+  // Aiguillage Vercel vs Railway
+  if (path.includes("/api/auth") || path.includes("get_live") || path.includes("/api/epg")) {
+    return VERCEL_URL;
+  }
+
+  return RAILWAY_URL;
+}
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "same-origin" });
+  const baseUrl = getTargetBaseUrl(url);
+  const targetUrl = baseUrl ? `${baseUrl}${url}` : url;
+
+  const res = await fetch(targetUrl, { credentials: "same-origin" });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
@@ -46,7 +75,10 @@ export const api = {
     }>("/api/auth"),
 
   login: async (baseUrl: string, username: string, password: string) => {
-    const res = await fetch("/api/auth", {
+    const route = "/api/auth";
+    const targetUrl = `${getTargetBaseUrl(route)}${route}`;
+
+    const res = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, username, password }),
@@ -57,7 +89,19 @@ export const api = {
     return data as { ok: true; user_info: AuthResponse["user_info"]; server_info: AuthResponse["server_info"] };
   },
 
-  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "same-origin" }),
+  logout: async () => {
+    const route = "/api/auth";
+    const targetUrl = `${getTargetBaseUrl(route)}${route}`;
+
+    try {
+      await fetch(targetUrl, { method: "DELETE", credentials: "same-origin" });
+    } catch {}
+
+    if (typeof window !== "undefined") {
+      localStorage.clear();
+      window.location.href = "/login";
+    }
+  },
 
   // catalog
   liveCategories: () => getJson<Category[]>(x("get_live_categories")),
@@ -74,9 +118,11 @@ export const api = {
     getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
 };
 
-/** Same-origin proxied media URL (used for live). */
+/** Same-origin proxied media URL (utilisé pour les flux). */
 export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
-  return `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
+  const path = `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
+  const baseUrl = kind === "live" ? VERCEL_URL : RAILWAY_URL;
+  return baseUrl ? `${baseUrl}${path}` : path;
 }
 
 /** 
