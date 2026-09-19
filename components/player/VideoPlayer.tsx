@@ -55,12 +55,11 @@ export function VideoPlayer({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subFileRef = useRef<HTMLInputElement>(null);
 
-  // --- ÉTATS ADSERVER ---
+  // --- ÉTATS ADSERVER (STYLE PRIME VIDEO) ---
   const [adVideoUrl, setAdVideoUrl] = useState<string | null>(null);
   const [isPlayingAd, setIsPlayingAd] = useState<boolean>(false);
   const [adDuration, setAdDuration] = useState<number>(0);
   const [adCurrentTime, setAdCurrentTime] = useState<number>(0);
-  const hasFetchedAdRef = useRef<boolean>(false);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -95,48 +94,49 @@ export function VideoPlayer({
   const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
-  // Type de média calculé automatiquement
+  // Détermination dynamique du type de média transmis à l'AdServer
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
   useEffect(() => {
     setSrcIdx(0);
     setSeekBase(startTime || 0);
-    hasFetchedAdRef.current = false;
   }, [sources, startTime]);
 
-  // --- APPEL DE L'ADSERVER VIA LE PROXY LOCAL ---
+  // --- APPEL ADSERVER DYNAMIQUE (DÉCLENCHÉ À CHAQUE SÉLECTION DE CHAÎNE/MÉDIA) ---
   useEffect(() => {
-    if (hasFetchedAdRef.current) return;
+    let active = true;
 
     const fetchAd = async () => {
       const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API || "/api/ad";
 
-      hasFetchedAdRef.current = true;
-
       try {
         const endpoint = `${window.location.origin}${apiUrl}?media=${currentMedia}`;
-        const response = await fetch(endpoint);
+        const response = await fetch(endpoint, { cache: "no-store" });
 
         if (!response.ok) {
-          setIsPlayingAd(false);
+          if (active) setIsPlayingAd(false);
           return;
         }
 
         const data = await response.json();
 
-        if (data.status === "success" && data.ad && data.ad.video_url) {
+        if (active && data.status === "success" && data.ad && data.ad.video_url) {
           setAdVideoUrl(data.ad.video_url);
           setIsPlayingAd(true);
         } else {
-          setIsPlayingAd(false);
+          if (active) setIsPlayingAd(false);
         }
       } catch (err) {
-        setIsPlayingAd(false);
+        if (active) setIsPlayingAd(false);
       }
     };
 
     fetchAd();
-  }, [currentMedia]);
+
+    return () => {
+      active = false;
+    };
+  }, [currentMedia, sources]);
 
   const tryFallback = useCallback(
     (msg: string) => {
@@ -153,7 +153,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT DE LA VIDÉO PRINCIPALE ---
+  // --- ATTACHEMENT DU FLUX PRINCIPAL (EN PAUSE TANT QUE LA PUB TOURNE) ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src || isPlayingAd) return;
