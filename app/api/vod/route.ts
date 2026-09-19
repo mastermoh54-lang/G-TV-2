@@ -1,4 +1,4 @@
-// app/api/vod/route.ts
+// app/api/vod/route.ts (sur la branche gtv-railway)
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
 
@@ -29,8 +29,19 @@ async function checkUrl(url: string) {
 
 export async function GET(req: Request) {
   try {
-    const creds = (await requireSession()) as any;
     const { searchParams } = new URL(req.url);
+
+    // 1. Tente de récupérer la session via le cookie, sinon via les paramètres URL (fallback cross-domain)
+    let creds: any = {};
+    try {
+      creds = (await requireSession()) as any;
+    } catch {
+      creds = {
+        server: searchParams.get("server") || searchParams.get("host"),
+        username: searchParams.get("username"),
+        password: searchParams.get("password"),
+      };
+    }
 
     const type = searchParams.get("type") || "movie";
     const id = searchParams.get("id");
@@ -41,14 +52,17 @@ export async function GET(req: Request) {
       return new Response("Invalid parameters", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
-    if (!rawHost) {
-      return new Response("URL du serveur manquante", { status: 400, headers: NO_CACHE_HEADERS });
+    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || searchParams.get("server") || "";
+    const username = creds.username || creds.user || searchParams.get("username") || "";
+    const password = creds.password || creds.pass || searchParams.get("password") || "";
+
+    if (!rawHost || !username || !password) {
+      return new Response("URL du serveur ou identifiants manquants", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     const host = String(rawHost).replace(/\/+$/, "");
-    const u = encodeURIComponent(creds.username || creds.user || "");
-    const p = encodeURIComponent(creds.password || creds.pass || "");
+    const u = encodeURIComponent(username);
+    const p = encodeURIComponent(password);
     const folder = type === "series" ? "series" : "movie";
 
     let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${originalExt}`;
