@@ -11,6 +11,9 @@ import { formatTime, cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+// Compteur global de zapping pour conserver l'état entre les changements de chaînes
+let globalZapCount = 0;
+
 function srtToVtt(text: string): string {
   const body = text
     .replace(/\r+/g, "")
@@ -58,7 +61,7 @@ export function VideoPlayer({
   // --- ÉTATS ADSERVER ---
   const [adConfig, setAdConfig] = useState<{ url: string; triggerTime: number } | null>(null);
   const [isPlayingAd, setIsPlayingAd] = useState<boolean>(false);
-  const [adPlayed, setAdPlayed] = useState<boolean>(false); // Évite de rejouer la pub en boucle
+  const [adPlayed, setAdPlayed] = useState<boolean>(false);
   const [adDuration, setAdDuration] = useState<number>(0);
   const [adCurrentTime, setAdCurrentTime] = useState<number>(0);
 
@@ -97,18 +100,29 @@ export function VideoPlayer({
 
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
+  // INCREMENTATION DU COMPTEUR DE ZAPPING SUR CHAQUE NOUVELLE SOURCE LIVE
   useEffect(() => {
     setSrcIdx(0);
     setSeekBase(startTime || 0);
     setAdPlayed(false);
     setIsPlayingAd(false);
-  }, [sources, startTime]);
 
-  // --- CHARGEMENT DE LA CONFIGURATION DE LA PUB ---
+    if (isLive) {
+      globalZapCount += 1;
+    }
+  }, [sources, startTime, isLive]);
+
+  // --- CHARGEMENT ET DÉCLENCHEMENT DE LA PUB ---
   useEffect(() => {
     let active = true;
 
     const fetchAd = async () => {
+      // Si c'est un Live et que c'est une chaîne impaire (1, 3, 5...), on ne charge pas de pub
+      if (isLive && globalZapCount % 2 !== 0) {
+        if (active) setIsPlayingAd(false);
+        return;
+      }
+
       const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API || "/api/ad";
       const baseUrl = apiUrl.startsWith("http")
         ? apiUrl
@@ -127,6 +141,12 @@ export function VideoPlayer({
             url: data.ad.video_url,
             triggerTime: Number(data.ad.trigger_time) || 0,
           });
+
+          // Pour les chaînes Live paires (2, 4, 6...) : Lancement direct de la pub Pre-Roll
+          if (isLive) {
+            setIsPlayingAd(true);
+            setAdPlayed(true);
+          }
         }
       } catch (err) {
         console.error("Erreur AdServer:", err);
@@ -138,7 +158,7 @@ export function VideoPlayer({
     return () => {
       active = false;
     };
-  }, [currentMedia, sources]);
+  }, [currentMedia, sources, isLive]);
 
   const tryFallback = useCallback(
     (msg: string) => {
@@ -155,7 +175,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT DU FLUX PRINCIPAL ---
+  // --- ATTACHEMENT FLUX PRINCIPAL ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -195,9 +215,9 @@ export function VideoPlayer({
       engineRef.current?.destroy();
       engineRef.current = null;
     };
-  }, [src, ext, isLive, tryFallback, srcIdx, sources.length]);
+  }, [src, ext, isLive, tryFallback, srcIdx, sources.length, isPlayingAd]);
 
-  // --- GESTION DES ÉVÉNEMENTS ET DÉCLENCHEMENT DYNAMIQUE DE LA PUB (30 SECONDES) ---
+  // --- DÉCLENCHEMENT MID-ROLL SUR VOD / SÉRIES (À 30 SECONDES) ---
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -221,8 +241,9 @@ export function VideoPlayer({
       setCurrent(curTime);
       setDuration(v.duration || 0);
 
-      // Déclenchement de la pub au temps configuré (ex: 30 secondes)
+      // Déclenchement au temps configuré (ex: 30s) uniquement sur VOD / Séries
       if (
+        !isLive &&
         adConfig &&
         !adPlayed &&
         !isPlayingAd &&
@@ -423,7 +444,6 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCurrent, volume, seekable, isPlayingAd, togglePlay, seek, toggleFs, toggleMute, onBack, showControls, trackList, activeTrack, selectTrack, hasNext, onNext]);
 
-  // --- FIN DE PUB ET REPRISE DU FILM/SÉRIE ---
   const handleAdLoadedMetadata = () => {
     if (adVideoRef.current) {
       setAdDuration(Math.floor(adVideoRef.current.duration));
@@ -455,7 +475,7 @@ export function VideoPlayer({
         controlsOn ? "cursor-default" : "cursor-none",
       )}
     >
-      {/* FLUX PRINCIPAL (VOD / SÉRIE / LIVE) */}
+      {/* FLUX PRINCIPAL */}
       <video
         ref={videoRef}
         poster={poster}
@@ -473,9 +493,9 @@ export function VideoPlayer({
         {subUrl && <track kind="subtitles" src={subUrl} label={subName || "Loaded file"} />}
       </video>
 
-      {/* OVERLAY PUBLICITAIRE STYLE PRIME VIDEO */}
+      {/* OVERLAY PUBLICITAIRE TAPE EN PLEIN ÉCRAN */}
       {isPlayingAd && adConfig?.url && (
-        <div className="relative h-full w-full bg-black">
+        <div className="relative h-full w-full bg-black z-10">
           <video
             ref={adVideoRef}
             src={adConfig.url}
