@@ -88,7 +88,7 @@ function WatchInner() {
 
   const mediaKind = type as StreamKind;
 
-  // Injection dynamique des identifiants Xtream pour Railway
+  // Génération des URLs de flux avec injection automatique des paramètres de connexion Xtream
   const sources = useMemo(() => {
     const cb = Date.now();
     
@@ -172,7 +172,10 @@ function WatchInner() {
   if (!isLive && resolving) {
     return (
       <div className="grid h-dvh place-items-center bg-black">
-        <Loader2 className="h-10 w-10 animate-spin text-iris-400" />
+        <div className="flex flex-col items-center gap-3 text-fog-400">
+          <Loader2 className="h-10 w-10 animate-spin text-iris-400" />
+          <span className="text-sm">Preparing stream…</span>
+        </div>
       </div>
     );
   }
@@ -200,7 +203,10 @@ export default function WatchPage() {
     <Suspense
       fallback={
         <div className="grid h-dvh place-items-center bg-black">
-          <Loader2 className="h-10 w-10 animate-spin text-iris-400" />
+          <div className="flex flex-col items-center gap-3 text-fog-400">
+            <Loader2 className="h-10 w-10 animate-spin text-iris-400" />
+            <span className="text-sm">Preparing stream…</span>
+          </div>
         </div>
       }
     >
