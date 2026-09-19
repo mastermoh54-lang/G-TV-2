@@ -56,8 +56,9 @@ export function VideoPlayer({
   const subFileRef = useRef<HTMLInputElement>(null);
 
   // --- ÉTATS ADSERVER ---
-  const [adVideoUrl, setAdVideoUrl] = useState<string | null>(null);
+  const [adConfig, setAdConfig] = useState<{ url: string; triggerTime: number } | null>(null);
   const [isPlayingAd, setIsPlayingAd] = useState<boolean>(false);
+  const [adPlayed, setAdPlayed] = useState<boolean>(false); // Évite de rejouer la pub en boucle
   const [adDuration, setAdDuration] = useState<number>(0);
   const [adCurrentTime, setAdCurrentTime] = useState<number>(0);
 
@@ -94,47 +95,41 @@ export function VideoPlayer({
   const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
-  // Détermination dynamique du type de média
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
   useEffect(() => {
     setSrcIdx(0);
     setSeekBase(startTime || 0);
+    setAdPlayed(false);
+    setIsPlayingAd(false);
   }, [sources, startTime]);
 
-  // --- APPEL ADSERVER CORRIGÉ ---
+  // --- CHARGEMENT DE LA CONFIGURATION DE LA PUB ---
   useEffect(() => {
     let active = true;
 
     const fetchAd = async () => {
       const apiUrl = process.env.NEXT_PUBLIC_ADSERVER_API || "/api/ad";
-      const slot = "Mid-Roll";
-
-      // Construction sécurisée de l'URL absolue/relative
       const baseUrl = apiUrl.startsWith("http")
         ? apiUrl
         : `${window.location.origin}${apiUrl}`;
       
-      const endpoint = `${baseUrl}?media=${currentMedia}&slot=${slot}`;
+      const endpoint = `${baseUrl}?media=${currentMedia}&slot=Mid-Roll`;
 
       try {
         const response = await fetch(endpoint, { cache: "no-store" });
-
-        if (!response.ok) {
-          if (active) setIsPlayingAd(false);
-          return;
-        }
+        if (!response.ok) return;
 
         const data = await response.json();
 
         if (active && data.status === "success" && data.ad && data.ad.video_url) {
-          setAdVideoUrl(data.ad.video_url);
-          setIsPlayingAd(true);
-        } else {
-          if (active) setIsPlayingAd(false);
+          setAdConfig({
+            url: data.ad.video_url,
+            triggerTime: Number(data.ad.trigger_time) || 0,
+          });
         }
       } catch (err) {
-        if (active) setIsPlayingAd(false);
+        console.error("Erreur AdServer:", err);
       }
     };
 
@@ -160,10 +155,10 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT FLUX PRINCIPAL ---
+  // --- ATTACHEMENT DU FLUX PRINCIPAL ---
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src || isPlayingAd) return;
+    if (!video || !src) return;
     let cancelled = false;
     setBuffering(true);
 
@@ -172,7 +167,9 @@ export function VideoPlayer({
         engineRef.current?.destroy();
         engineRef.current = await attach(video, { url: src, ext, isLive });
         if (cancelled) return;
-        video.play().catch(() => {});
+        if (!isPlayingAd) {
+          video.play().catch(() => {});
+        }
       } catch (e) {
         if (!cancelled) tryFallback((e as Error).message || "Playback failed");
       }
@@ -184,9 +181,9 @@ export function VideoPlayer({
         const v = videoRef.current;
         if (cancelled || !v || v.readyState >= 3) return;
         if (!isLastSource) {
-          tryFallback("Stream was slow to start — switching to backup source.");
+          tryFallback("Stream slow to start — switching backup.");
         } else {
-          setError("Couldn’t start this channel — it may be offline, geo-blocked, or not broadcasting right now. Try another.");
+          setError("Stream inaccessible actuellement.");
         }
       },
       isLastSource ? 30000 : 12000,
@@ -198,11 +195,13 @@ export function VideoPlayer({
       engineRef.current?.destroy();
       engineRef.current = null;
     };
-  }, [src, ext, isLive, tryFallback, srcIdx, sources.length, isPlayingAd]);
+  }, [src, ext, isLive, tryFallback, srcIdx, sources.length]);
 
+  // --- GESTION DES ÉVÉNEMENTS ET DÉCLENCHEMENT DYNAMIQUE DE LA PUB (30 SECONDES) ---
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
+
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onWaiting = () => setBuffering(true);
@@ -216,18 +215,34 @@ export function VideoPlayer({
         v.currentTime = startTime;
       }
     };
+
     const onTime = () => {
-      setCurrent(v.currentTime);
+      const curTime = v.currentTime;
+      setCurrent(curTime);
       setDuration(v.duration || 0);
+
+      // Déclenchement de la pub au temps configuré (ex: 30 secondes)
+      if (
+        adConfig &&
+        !adPlayed &&
+        !isPlayingAd &&
+        curTime >= adConfig.triggerTime &&
+        curTime < adConfig.triggerTime + 2
+      ) {
+        v.pause();
+        setIsPlayingAd(true);
+        setAdPlayed(true);
+      }
+
       if (isTranscode) {
-        if (knownDuration > 0) onProgress?.(seekBase + v.currentTime, knownDuration);
+        if (knownDuration > 0) onProgress?.(seekBase + curTime, knownDuration);
       } else {
-        onProgress?.(v.currentTime, v.duration || 0);
+        onProgress?.(curTime, v.duration || 0);
       }
     };
+
     const onEnd = () => onEnded?.();
-    const onErr = () =>
-      tryFallback("This title isn’t available from your provider right now, or can’t be played in the browser. Try another title.");
+    const onErr = () => tryFallback("Erreur de lecture de la source.");
 
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
@@ -237,6 +252,7 @@ export function VideoPlayer({
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("ended", onEnd);
     v.addEventListener("error", onErr);
+
     return () => {
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
@@ -247,7 +263,7 @@ export function VideoPlayer({
       v.removeEventListener("ended", onEnd);
       v.removeEventListener("error", onErr);
     };
-  }, [ext, isLive, startTime, onProgress, onEnded, tryFallback, isTranscode, knownDuration, seekBase]);
+  }, [ext, isLive, startTime, onProgress, onEnded, tryFallback, isTranscode, knownDuration, seekBase, adConfig, adPlayed, isPlayingAd]);
 
   useEffect(() => {
     const onFs = () => setFullscreen(!!document.fullscreenElement);
@@ -407,7 +423,7 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCurrent, volume, seekable, isPlayingAd, togglePlay, seek, toggleFs, toggleMute, onBack, showControls, trackList, activeTrack, selectTrack, hasNext, onNext]);
 
-  // --- GESTION FIN DE PUB ET ENCHAÎNEMENT FLUX PRINCIPAL ---
+  // --- FIN DE PUB ET REPRISE DU FILM/SÉRIE ---
   const handleAdLoadedMetadata = () => {
     if (adVideoRef.current) {
       setAdDuration(Math.floor(adVideoRef.current.duration));
@@ -422,9 +438,9 @@ export function VideoPlayer({
 
   const handleAdEnded = () => {
     setIsPlayingAd(false);
-    setTimeout(() => {
-      videoRef.current?.play().catch(() => {});
-    }, 100);
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
   };
 
   const adRemainingTime = Math.max(0, adDuration - adCurrentTime);
@@ -439,12 +455,30 @@ export function VideoPlayer({
         controlsOn ? "cursor-default" : "cursor-none",
       )}
     >
+      {/* FLUX PRINCIPAL (VOD / SÉRIE / LIVE) */}
+      <video
+        ref={videoRef}
+        poster={poster}
+        className={cn(
+          "absolute inset-0 h-full w-full object-contain",
+          isPlayingAd ? "hidden" : "block"
+        )}
+        playsInline
+        onClick={togglePlay}
+        onDoubleClick={toggleFs}
+      >
+        {extSubs.map((s, i) => (
+          <track key={`ext-${i}`} kind="subtitles" src={s.src} label={s.label} srcLang={s.lang} />
+        ))}
+        {subUrl && <track kind="subtitles" src={subUrl} label={subName || "Loaded file"} />}
+      </video>
+
       {/* OVERLAY PUBLICITAIRE STYLE PRIME VIDEO */}
-      {isPlayingAd && adVideoUrl ? (
+      {isPlayingAd && adConfig?.url && (
         <div className="relative h-full w-full bg-black">
           <video
             ref={adVideoRef}
-            src={adVideoUrl}
+            src={adConfig.url}
             autoPlay
             playsInline
             onLoadedMetadata={handleAdLoadedMetadata}
@@ -459,21 +493,6 @@ export function VideoPlayer({
             <span className="font-mono text-amber-400">{formatTime(adRemainingTime)}</span>
           </div>
         </div>
-      ) : (
-        /* FLUX PRINCIPAL */
-        <video
-          ref={videoRef}
-          poster={poster}
-          className="absolute inset-0 h-full w-full object-contain"
-          playsInline
-          onClick={togglePlay}
-          onDoubleClick={toggleFs}
-        >
-          {extSubs.map((s, i) => (
-            <track key={`ext-${i}`} kind="subtitles" src={s.src} label={s.label} srcLang={s.lang} />
-          ))}
-          {subUrl && <track kind="subtitles" src={subUrl} label={subName || "Loaded file"} />}
-        </video>
       )}
 
       <input
