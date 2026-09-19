@@ -24,19 +24,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: "empty", message: "AdServer indisponible" });
     }
 
+    // Récupération de la réponse brute
     const rawText = await res.text();
 
-    // Extraction du contenu JSON situé entre la première accolade { et la dernière }
-    const firstBrace = rawText.indexOf("{");
-    const lastBrace = rawText.lastIndexOf("}");
+    // Extraction stricte du JSON situé entre la première '{' et la dernière '}'
+    const startIndex = rawText.indexOf("{");
+    const endIndex = rawText.lastIndexOf("}");
 
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      return NextResponse.json({ status: "empty", message: "Aucun JSON trouvé dans la réponse" });
+    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+      return NextResponse.json({ status: "empty", message: "Réponse JSON introuvable" });
     }
 
-    const jsonString = rawText.substring(firstBrace, lastBrace + 1);
-    const data = JSON.parse(jsonString);
+    const cleanJson = rawText.substring(startIndex, endIndex + 1);
+    const data = JSON.parse(cleanJson);
 
+    // Ajustement de l'URL vidéo en HTTPS
     if (data?.ad?.video_url) {
       let rawUrl = data.ad.video_url;
       if (!rawUrl.startsWith("http")) {
@@ -51,8 +53,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({
       status: "empty",
-      message: "Erreur lors du traitement de l'AdServer",
-      error: error?.message,
+      message: "Erreur lors du traitement de la publicité",
     });
   }
 }
