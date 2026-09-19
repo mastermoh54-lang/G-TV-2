@@ -1,4 +1,4 @@
-// app/api/show/route.ts
+// app/api/show/route.ts (branche gtv-railway)
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
 
@@ -29,8 +29,18 @@ async function checkUrl(url: string) {
 
 export async function GET(req: Request) {
   try {
-    const creds = (await requireSession()) as any;
     const { searchParams } = new URL(req.url);
+
+    let creds: any = {};
+    try {
+      creds = (await requireSession()) as any;
+    } catch {
+      creds = {
+        server: searchParams.get("server") || searchParams.get("host"),
+        username: searchParams.get("username"),
+        password: searchParams.get("password"),
+      };
+    }
 
     const id = searchParams.get("id");
     const originalExt = searchParams.get("ext") || "mp4";
@@ -40,24 +50,31 @@ export async function GET(req: Request) {
       return new Response("ID manquant", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
-    if (!rawHost) {
-      return new Response("URL du serveur manquante", { status: 400, headers: NO_CACHE_HEADERS });
+    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || searchParams.get("server") || "";
+    const username = creds.username || creds.user || searchParams.get("username") || "";
+    const password = creds.password || creds.pass || searchParams.get("password") || "";
+
+    if (!rawHost || !username || !password) {
+      return new Response("Paramètres de connexion manquants", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     const host = String(rawHost).replace(/\/+$/, "");
-    const u = encodeURIComponent(creds.username || creds.user || "");
-    const p = encodeURIComponent(creds.password || creds.pass || "");
+    const u = encodeURIComponent(username);
+    const p = encodeURIComponent(password);
 
+    // URL dédiée spécifiquement au dossier /series/
     let inputUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
-
+    console.log(`[SHOW] 🔍 Vérification du lien série : ${inputUrl}`);
+    
     let isOk = await checkUrl(inputUrl);
+
     if (!isOk) {
-      const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
+      const fallbacks = ["mkv", "mp4", "avi", "ts"].filter(e => e !== originalExt);
       for (const altExt of fallbacks) {
         const altUrl = `${host}/series/${u}/${p}/${id}.${altExt}`;
         if (await checkUrl(altUrl)) {
           inputUrl = altUrl;
+          isOk = true;
           break;
         }
       }
@@ -102,9 +119,13 @@ export async function GET(req: Request) {
     });
 
     return new Response(stream, {
-      headers: { "content-type": "video/mp4", ...NO_CACHE_HEADERS },
+      headers: {
+        "content-type": "video/mp4",
+        ...NO_CACHE_HEADERS,
+      },
     });
   } catch (err: any) {
-    return new Response(`Erreur SHOW: ${err.message}`, { status: 500, headers: NO_CACHE_HEADERS });
+    console.error("[SHOW] Crash total :", err);
+    return new Response(`Erreur Show: ${err.message}`, { status: 500, headers: NO_CACHE_HEADERS });
   }
 }
