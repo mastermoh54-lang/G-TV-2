@@ -11,8 +11,8 @@ import { formatTime, cn } from "@/lib/utils";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-// Compteur global de zapping pour conserver l'état entre les changements de chaînes
-let globalZapCount = 0;
+// Compteur global de zapping Live
+let liveZapCount = 0;
 
 function srtToVtt(text: string): string {
   const body = text
@@ -100,25 +100,27 @@ export function VideoPlayer({
 
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
-  // INCREMENTATION DU COMPTEUR DE ZAPPING SUR CHAQUE NOUVELLE SOURCE LIVE
+  // COMPTEUR DE ZAPPING CHAÎNES LIVE
   useEffect(() => {
     setSrcIdx(0);
     setSeekBase(startTime || 0);
     setAdPlayed(false);
     setIsPlayingAd(false);
+    setAdCurrentTime(0);
+    setAdDuration(0);
 
     if (isLive) {
-      globalZapCount += 1;
+      liveZapCount += 1;
     }
   }, [sources, startTime, isLive]);
 
-  // --- CHARGEMENT ET DÉCLENCHEMENT DE LA PUB ---
+  // --- REQUÊTE ADSERVER ---
   useEffect(() => {
     let active = true;
 
     const fetchAd = async () => {
-      // Si c'est un Live et que c'est une chaîne impaire (1, 3, 5...), on ne charge pas de pub
-      if (isLive && globalZapCount % 2 !== 0) {
+      // 1ère chaîne Live : pas de pub
+      if (isLive && liveZapCount === 1) {
         if (active) setIsPlayingAd(false);
         return;
       }
@@ -139,14 +141,8 @@ export function VideoPlayer({
         if (active && data.status === "success" && data.ad && data.ad.video_url) {
           setAdConfig({
             url: data.ad.video_url,
-            triggerTime: Number(data.ad.trigger_time) || 0,
+            triggerTime: Number(data.ad.trigger_time) || 30,
           });
-
-          // Pour les chaînes Live paires (2, 4, 6...) : Lancement direct de la pub Pre-Roll
-          if (isLive) {
-            setIsPlayingAd(true);
-            setAdPlayed(true);
-          }
         }
       } catch (err) {
         console.error("Erreur AdServer:", err);
@@ -159,6 +155,21 @@ export function VideoPlayer({
       active = false;
     };
   }, [currentMedia, sources, isLive]);
+
+  // --- MINUTEUR POUR LANCER LA PUB SUR LES CHAÎNES LIVE (EX: 30S / 50S) ---
+  useEffect(() => {
+    if (!isLive || liveZapCount <= 1 || !adConfig || adPlayed) return;
+
+    const timer = setTimeout(() => {
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+      setIsPlayingAd(true);
+      setAdPlayed(true);
+    }, (adConfig.triggerTime || 30) * 1000);
+
+    return () => clearTimeout(timer);
+  }, [isLive, adConfig, adPlayed]);
 
   const tryFallback = useCallback(
     (msg: string) => {
@@ -175,7 +186,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // --- ATTACHEMENT FLUX PRINCIPAL ---
+  // --- ATTACHEMENT DU FLUX PRINCIPAL ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
@@ -217,7 +228,7 @@ export function VideoPlayer({
     };
   }, [src, ext, isLive, tryFallback, srcIdx, sources.length, isPlayingAd]);
 
-  // --- DÉCLENCHEMENT MID-ROLL SUR VOD / SÉRIES (À 30 SECONDES) ---
+  // --- SUIVI TEMPS VOD / SÉRIES ---
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -241,7 +252,7 @@ export function VideoPlayer({
       setCurrent(curTime);
       setDuration(v.duration || 0);
 
-      // Déclenchement au temps configuré (ex: 30s) uniquement sur VOD / Séries
+      // Déclenchement VOD / Séries au temps configuré dans le panneau
       if (
         !isLive &&
         adConfig &&
@@ -444,15 +455,22 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCurrent, volume, seekable, isPlayingAd, togglePlay, seek, toggleFs, toggleMute, onBack, showControls, trackList, activeTrack, selectTrack, hasNext, onNext]);
 
+  // --- ÉVÉNEMENTS LECTURE PUB (DÉCOMPTE REPRISE) ---
   const handleAdLoadedMetadata = () => {
     if (adVideoRef.current) {
-      setAdDuration(Math.floor(adVideoRef.current.duration));
+      const dur = adVideoRef.current.duration;
+      if (dur && !isNaN(dur)) {
+        setAdDuration(Math.floor(dur));
+      }
     }
   };
 
   const handleAdTimeUpdate = () => {
     if (adVideoRef.current) {
       setAdCurrentTime(Math.floor(adVideoRef.current.currentTime));
+      if (!adDuration && adVideoRef.current.duration) {
+        setAdDuration(Math.floor(adVideoRef.current.duration));
+      }
     }
   };
 
@@ -493,7 +511,7 @@ export function VideoPlayer({
         {subUrl && <track kind="subtitles" src={subUrl} label={subName || "Loaded file"} />}
       </video>
 
-      {/* OVERLAY PUBLICITAIRE TAPE EN PLEIN ÉCRAN */}
+      {/* OVERLAY PUBLICITAIRE EN PLEIN ÉCRAN AVEC DÉCOMPTE (VOD / SÉRIES / LIVE) */}
       {isPlayingAd && adConfig?.url && (
         <div className="relative h-full w-full bg-black z-10">
           <video
