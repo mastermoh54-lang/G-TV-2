@@ -127,7 +127,7 @@ const FlipActorCard = ({ name }: { name: string }) => {
   );
 };
 
-export default function SeriesDetailPage() {
+function SeriesDetailPageContent() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, isError } = useSeriesInfo(id);
   const { isFav, toggleFav, progress } = useLibrary();
@@ -194,7 +194,6 @@ export default function SeriesDetailPage() {
     ? info.cast.split(",").map((actor: string) => actor.trim()).filter(Boolean)
     : [];
 
-  // Durée de l'épisode actif en secondes pour la barre de recherche
   const epDurationSec = activeEpisode
     ? Number(activeEpisode.info?.duration_secs) ||
       (activeEpisode.info?.duration ? parseInt(activeEpisode.info.duration) * 60 : 0) ||
@@ -373,7 +372,7 @@ export default function SeriesDetailPage() {
                   </div>
 
                   <Link
-                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} · ${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
+                    href={`/watch?type=series&id=${ep.id}&ext=${ext}&title=${encodeURIComponent(`${cleanName(title)} ·${epTitle}`)}&series=${id}${resume > 15 ? `&resume=${Math.floor(resume)}` : ""}`}
                     onClick={(e) => e.stopPropagation()}
                     className="p-2 text-fog-400 hover:text-white hover:bg-white/10 rounded-full transition-colors"
                     title="Lire en plein écran"
@@ -389,6 +388,21 @@ export default function SeriesDetailPage() {
       </DetailHero>
     </div>
   );
+}
+
+// Composant exporté avec garde-fou anti-SSR
+export default function SeriesDetailPage() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <SeriesSkeleton />;
+  }
+
+  return <SeriesDetailPageContent />;
 }
 
 function SeriesSkeleton() {
