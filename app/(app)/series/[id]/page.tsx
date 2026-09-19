@@ -1,7 +1,7 @@
 import { SeriesDetailClient } from "./SeriesDetailClient";
 
 export async function generateStaticParams() {
-  return [];
+  return [{ id: "placeholder" }];
 }
 
 export default async function SeriesDetailPage({
