@@ -11,7 +11,13 @@ import { VideoPlayer } from "@/components/player/VideoPlayer";
 import { useSeriesInfo } from "@/lib/hooks";
 import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
+import { streamSrc } from "@/lib/api";
+import { tmdb } from "@/lib/tmdb";
 import type { Episode } from "@/lib/xtream/types";
+
+export async function generateStaticParams() {
+  return [];
+}
 
 function EpisodeImage({
   ep,
@@ -32,18 +38,20 @@ function EpisodeImage({
     if (ep.info?.movie_image) return;
 
     let isMounted = true;
-    const cleanSeason = seasonKey.replace(/\D/g, "") || "1";
+    const cleanSeason = parseInt(seasonKey.replace(/\D/g, ""), 10) || 1;
 
-    fetch(
-      `/api/episode-image?tmdbId=${tmdbId || ""}&show=${encodeURIComponent(seriesTitle)}&season=${cleanSeason}&episode=${ep.episode_num}`
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted && data?.imageUrl) {
-          setImgSrc(data.imageUrl);
+    async function loadEpisodeImage() {
+      try {
+        if (tmdbId) {
+          const res = await tmdb<any>(`tv/${tmdbId}/season/${cleanSeason}/episode/${ep.episode_num}`);
+          if (isMounted && res?.still_path) {
+            setImgSrc(`https://image.tmdb.org/t/p/w500${res.still_path}`);
+          }
         }
-      })
-      .catch(() => {});
+      } catch (e) {}
+    }
+
+    loadEpisodeImage();
 
     return () => {
       isMounted = false;
@@ -67,17 +75,31 @@ const FlipActorCard = ({ name }: { name: string }) => {
 
   useEffect(() => {
     let isMounted = true;
-    fetch(`/api/actor-photo?name=${encodeURIComponent(name)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted) {
-          if (data?.photoUrl) setPhotoUrl(data.photoUrl);
-          if (data?.bio) setBio(data.bio);
+    if (!name) return;
+
+    async function loadActor() {
+      try {
+        const data = await tmdb<any>("search/person", { query: name, language: "fr-FR" });
+        const person = data?.results?.[0];
+        if (isMounted && person) {
+          if (person.profile_path) {
+            setPhotoUrl(`https://image.tmdb.org/t/p/w300${person.profile_path}`);
+          }
+          if (person.known_for_department) {
+            setBio(`Acteur principal / ${person.known_for_department}`);
+          } else {
+            setBio("Acteur de cinéma.");
+          }
+        } else if (isMounted) {
+          setBio("Information non disponible.");
         }
-      })
-      .catch(() => {
+      } catch (err) {
         if (isMounted) setBio("Information non disponible.");
-      });
+      }
+    }
+
+    loadActor();
+
     return () => {
       isMounted = false;
     };
@@ -308,12 +330,7 @@ function SeriesDetailPageContent() {
                   <VideoPlayer
                     key={activeEpisode.id}
                     sources={[
-                      `/api/transcode?type=series&id=${activeEpisode.id}&ext=${
-                        activeEpisode.container_extension || "mkv"
-                      }`,
-                      `/api/stream?type=series&id=${activeEpisode.id}&ext=${
-                        activeEpisode.container_extension || "mp4"
-                      }`,
+                      streamSrc("series", activeEpisode.id, activeEpisode.container_extension || "mp4")
                     ]}
                     ext="mp4"
                     isLive={false}
