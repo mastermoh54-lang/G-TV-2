@@ -390,7 +390,6 @@ function SeriesDetailPageContent() {
   );
 }
 
-// Composant exporté avec garde-fou anti-SSR
 export default function SeriesDetailPage() {
   const [mounted, setMounted] = useState(false);
 
