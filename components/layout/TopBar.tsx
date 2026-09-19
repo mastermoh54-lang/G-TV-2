@@ -23,9 +23,21 @@ export function TopBar({ title }: { title?: string }) {
   };
 
   const logout = async () => {
-    await api.logout();
-    router.replace("/login");
-    router.refresh();
+    try {
+      await api.logout();
+    } catch {
+      // Ignore si l'appel réseau échoue
+    }
+
+    // Vider totalement le stockage local pour détruire la session Xtream
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("gtv_auth");
+      localStorage.removeItem("xtream_session");
+      localStorage.removeItem("user_session");
+      localStorage.clear();
+      // Redirection matérielle forcée pour réinitialiser tout l'état de l'application
+      window.location.href = "/login";
+    }
   };
 
   const expiry =
