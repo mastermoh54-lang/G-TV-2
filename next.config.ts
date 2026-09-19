@@ -1,14 +1,35 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  typescript: {
-    // Autorise le build Docker même en présence d'avertissements de typage
-    ignoreBuildErrors: true,
-  },
-  eslint: {
-    // Ignore les erreurs ESLint lors de la compilation
-    ignoreDuringBuilds: true,
+  async rewrites() {
+    return [
+      // 1. Redirection du Live TV & Xtream vers Vercel
+      {
+        source: '/api/live/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/live/:path*',
+      },
+      {
+        source: '/api/xtream/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/xtream/:path*',
+      },
+      {
+        source: '/api/epg/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/epg/:path*',
+      },
+      // 2. Redirection des Films & Séries (Transcodage) vers Railway
+      {
+        source: '/api/vod/:path*',
+        destination: 'https://g-tv-2-production.up.railway.app/api/vod/:path*',
+      },
+      {
+        source: '/api/series/:path*',
+        destination: 'https://g-tv-2-production.up.railway.app/api/series/:path*',
+      },
+      {
+        source: '/api/stream/:path*',
+        destination: 'https://g-tv-2-production.up.railway.app/api/stream/:path*',
+      },
+    ];
   },
 };
 
