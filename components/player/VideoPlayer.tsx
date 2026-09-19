@@ -55,7 +55,7 @@ export function VideoPlayer({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subFileRef = useRef<HTMLInputElement>(null);
 
-  // ÉTATS ADSERVER (STYLE PRIME VIDEO)
+  // --- ÉTATS ADSERVER (STYLE PRIME VIDEO) ---
   const [adVideoUrl, setAdVideoUrl] = useState<string | null>(null);
   const [isPlayingAd, setIsPlayingAd] = useState<boolean>(false);
   const [adDuration, setAdDuration] = useState<number>(0);
@@ -95,15 +95,16 @@ export function VideoPlayer({
   const total = isTranscode ? (knownDuration || 0) : duration;
   const displayCurrent = isTranscode ? seekBase + current : current;
 
-  // 1. REQUÊTE ADSERVER SÉCURISÉE (SANS BLOQUER LES LIVES)
+  // Determination dynamique du type de média transmis à l'AdServer
   const currentMedia = isLive ? "live" : (ext === "series" ? "series" : "movie");
 
   useEffect(() => {
     setSrcIdx(0);
     setSeekBase(startTime || 0);
-    hasFetchedAdRef.current = false; // Réinitialiser le verrou si la source change
+    hasFetchedAdRef.current = false;
   }, [sources, startTime]);
 
+  // --- APPEL ADSERVER DYNAMIQUE (SANS SLOT EN DUR) ---
   useEffect(() => {
     if (hasFetchedAdRef.current) return;
 
@@ -114,7 +115,8 @@ export function VideoPlayer({
       hasFetchedAdRef.current = true;
 
       try {
-        const response = await fetch(`${apiUrl}?slot=Pre-Roll&media=${currentMedia}`);
+        // Ingestion dynamique sans slot forcé en dur
+        const response = await fetch(`${apiUrl}?media=${currentMedia}`);
         const data = await response.json();
 
         if (data.status === "success" && data.ad && data.ad.video_url) {
@@ -152,7 +154,7 @@ export function VideoPlayer({
     [sources.length],
   );
 
-  // 2. ATTACHEMENT DU LECTEUR PRINCIPAL (En attente si pub en cours)
+  // --- ATTACHEMENT DU FLUX PRINCIPAL ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src || isPlayingAd) return;
@@ -399,7 +401,7 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [displayCurrent, volume, seekable, isPlayingAd, togglePlay, seek, toggleFs, toggleMute, onBack, showControls, trackList, activeTrack, selectTrack, hasNext, onNext]);
 
-  // ÉVÉNEMENTS PUB (PRIME VIDEO)
+  // --- GESTION DU DÉCOMPTE PUB (STYLE PRIME VIDEO) ---
   const handleAdLoadedMetadata = () => {
     if (adVideoRef.current) {
       setAdDuration(Math.floor(adVideoRef.current.duration));
@@ -428,7 +430,7 @@ export function VideoPlayer({
         controlsOn ? "cursor-default" : "cursor-none",
       )}
     >
-      {/* 3. COUCHE PUBLICITÉ (STYLE PRIME VIDEO) */}
+      {/* OVERLAY PUBLICITAIRE STYLE PRIME VIDEO */}
       {isPlayingAd && adVideoUrl ? (
         <div className="relative h-full w-full bg-black">
           <video
@@ -441,7 +443,7 @@ export function VideoPlayer({
             onEnded={handleAdEnded}
             className="h-full w-full object-contain"
           />
-          {/* Badge Style Prime Video */}
+          {/* Badge discret Prime Video */}
           <div className="pointer-events-none absolute bottom-10 left-8 z-30 flex items-center gap-3 rounded-lg border border-white/10 bg-black/60 px-4 py-2 font-sans text-sm font-semibold tracking-wide text-white backdrop-blur-md shadow-2xl">
             <span className="h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse" />
             <span>Publicité</span>
@@ -450,7 +452,7 @@ export function VideoPlayer({
           </div>
         </div>
       ) : (
-        /* 4. COUCHE LECTEUR PRINCIPAL */
+        /* VIDEO PRINCIPALE */
         <video
           ref={videoRef}
           poster={poster}
@@ -500,7 +502,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* CONTRÔLES SUPERPOSÉS */}
+      {/* OVERLAY CONTRÔLES */}
       <div
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 flex items-start gap-3 bg-gradient-to-b from-black/80 to-transparent px-5 pb-12 pt-5 transition-opacity sm:px-8 z-20",
