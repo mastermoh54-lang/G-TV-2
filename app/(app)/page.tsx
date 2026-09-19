@@ -3,35 +3,36 @@
 import { useState, useEffect } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { PageSkeleton } from "@/components/ui/PageSkeleton";
-import { CatalogBrowser } from "@/components/catalog/CatalogBrowser";
-import { useMovies, useSeries } from "@/lib/hooks";
+import { useSeries } from "@/lib/hooks";
 
 function HomeContent() {
-  // Chargement des données côté client uniquement
-  const { data: movies = [] } = useMovies();
+  // Récupération des séries via le hook existant
   const { data: series = [] } = useSeries();
 
   return (
     <div className="space-y-6">
       <TopBar title="Accueil" />
       
-      {/* Intégration de tes sections ou composants de présentation */}
       <div className="px-6 space-y-8">
-        {/* Section Films */}
-        {movies.length > 0 && (
-          <section>
-            <h2 className="text-xl font-bold text-white mb-4">Films récents</h2>
-            <CatalogBrowser items={movies.slice(0, 12)} type="movie" />
-          </section>
-        )}
-
-        {/* Section Séries */}
-        {series.length > 0 && (
-          <section>
-            <h2 className="text-xl font-bold text-white mb-4">Séries populaires</h2>
-            <CatalogBrowser items={series.slice(0, 12)} type="series" />
-          </section>
-        )}
+        <section>
+          <h2 className="text-xl font-bold text-white mb-4">Séries populaires</h2>
+          {series.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {series.slice(0, 12).map((item) => (
+                <div key={item.series_id} className="relative group rounded-lg overflow-hidden bg-white/5 p-2">
+                  <img
+                    src={item.cover || "/placeholder.png"}
+                    alt={item.name}
+                    className="w-full h-48 object-cover rounded"
+                  />
+                  <p className="mt-2 text-sm font-medium text-white truncate">{item.name}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-fog-400 text-sm">Chargement des contenus...</p>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -44,11 +45,10 @@ export default function HomePage() {
     setMounted(true);
   }, []);
 
-  // Pendant le SSR Cloudflare Worker : renvoie 0 Mo de charge mémoire
+  // Rend 0 Mo sur Cloudflare Workers lors du build/SSR
   if (!mounted) {
     return <PageSkeleton />;
   }
 
-  // Rendu interactif côté navigateur
   return <HomeContent />;
 }
