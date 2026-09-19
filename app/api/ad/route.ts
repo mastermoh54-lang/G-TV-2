@@ -24,9 +24,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: "empty", message: "AdServer indisponible" });
     }
 
-    const data = await res.json();
+    // 1. Récupération du texte brut (incluant le HTML parasite)
+    const rawText = await res.text();
 
-    // Transforme "uploads/..." en "https://gmz.page.gd/uploads/..."
+    // 2. Extraction dynamique du bloc JSON situé entre { et }
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return NextResponse.json({ status: "empty", message: "Format JSON introuvable" });
+    }
+
+    // 3. Conversion du JSON nettoyé
+    const data = JSON.parse(jsonMatch[0]);
+
+    // 4. Normalisation de l'URL vidéo HTTPS
     if (data?.ad?.video_url) {
       let rawUrl = data.ad.video_url;
       if (!rawUrl.startsWith("http")) {
@@ -39,6 +49,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ status: "empty", message: "Erreur AdServer interceptée" });
+    return NextResponse.json({ status: "empty", message: "Erreur lors du traitement de l'AdServer" });
   }
 }
