@@ -2,12 +2,11 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   typescript: {
-    // Ignore les erreurs TypeScript uniquement pendant le build de production
     ignoreBuildErrors: true,
   },
   async rewrites() {
     return [
-      // Redirection Live vers Vercel
+      // 1. Live TV, Xtream, Flux HLS, Segments et Proxy Images vers VERCEL
       {
         source: '/api/live/:path*',
         destination: 'https://g-tv-2.vercel.app/api/live/:path*',
@@ -17,10 +16,30 @@ const nextConfig: NextConfig = {
         destination: 'https://g-tv-2.vercel.app/api/xtream/:path*',
       },
       {
-        source: '/api/epg/:path*',
-        destination: 'https://g-tv-2.vercel.app/api/epg/:path*',
+        source: '/api/hls/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/hls/:path*',
       },
-      // Redirection VOD/Séries vers Railway
+      {
+        source: '/api/hls',
+        destination: 'https://g-tv-2.vercel.app/api/hls',
+      },
+      {
+        source: '/api/hlsseg/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/hlsseg/:path*',
+      },
+      {
+        source: '/api/hlsseg',
+        destination: 'https://g-tv-2.vercel.app/api/hlsseg',
+      },
+      {
+        source: '/api/image-proxy',
+        destination: 'https://g-tv-2.vercel.app/api/image-proxy',
+      },
+      {
+        source: '/api/image-proxy/:path*',
+        destination: 'https://g-tv-2.vercel.app/api/image-proxy/:path*',
+      },
+      // 2. Films, Séries et Transcodage VOD vers RAILWAY
       {
         source: '/api/vod/:path*',
         destination: 'https://g-tv-2-production.up.railway.app/api/vod/:path*',
