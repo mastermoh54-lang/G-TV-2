@@ -20,10 +20,14 @@ export default function LoginPage() {
     setError(null);
     
     try {
-      // ✅ ON UTILISE UNE CHAÎNE VIDE POUR L'URL API
-      // Cela force l'application à utiliser son propre backend Cloudflare en relatif (/api/auth)
-      // au lieu d'essayer de contacter Vercel, ce qui élimine le problème de CORS.
-      const apiUrl = ""; 
+      // ✅ ON RESTAURE L'URL DU PROXY VERCEL ICI
+      // Cela ne causera plus de CORS car l'appel réseau reste local grâce au fichier lib/api.ts
+      // Cette URL sert juste à dire au backend interne : "Vérifie ces identifiants sur cette adresse"
+      const apiUrl = process.env.NEXT_PUBLIC_VERCEL_URL;
+      
+      if (!apiUrl) {
+        throw new Error("Erreur de configuration : L'URL de l'API est manquante.");
+      }
       
       const url = normalizeBaseUrl(apiUrl);
       const response = await api.login(url, username, password);
