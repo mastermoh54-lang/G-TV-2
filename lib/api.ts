@@ -41,7 +41,8 @@ async function getJson<T>(url: string): Promise<T> {
   const baseUrl = getTargetBaseUrl(url);
   const targetUrl = baseUrl ? `${baseUrl}${url}` : url;
 
-  const res = await fetch(targetUrl, { credentials: "same-origin" });
+  // CORRECTION ICI : "include" au lieu de "same-origin"
+  const res = await fetch(targetUrl, { credentials: "include" });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
@@ -78,11 +79,12 @@ export const api = {
     const route = "/api/auth";
     const targetUrl = `${getTargetBaseUrl(route)}${route}`;
 
+    // CORRECTION ICI : "include"
     const res = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, username, password }),
-      credentials: "same-origin",
+      credentials: "include",
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Login failed");
@@ -94,7 +96,8 @@ export const api = {
     const targetUrl = `${getTargetBaseUrl(route)}${route}`;
 
     try {
-      await fetch(targetUrl, { method: "DELETE", credentials: "same-origin" });
+      // CORRECTION ICI : "include"
+      await fetch(targetUrl, { method: "DELETE", credentials: "include" });
     } catch {}
 
     if (typeof window !== "undefined") {
@@ -118,17 +121,12 @@ export const api = {
     getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
 };
 
-/** Same-origin proxied media URL (utilisé pour les flux). */
 export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
   const path = `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
   const baseUrl = kind === "live" ? VERCEL_URL : RAILWAY_URL;
   return baseUrl ? `${baseUrl}${path}` : path;
 }
 
-/** 
- * BOUCLIER ANTI-REQUETES FANTOMES : 
- * Court-circuite l'ancienne logique pour laisser /api/show et /api/vod gérer la lecture.
- */
 export async function resolveSrc(
   kind: StreamKind,
   id: string | number,
@@ -137,6 +135,5 @@ export async function resolveSrc(
   return { url: null, directOk: true, ext };
 }
 
-// Exportations explicites pour la page Séries
 export const fetchSeries = (categoryId?: string) => api.series(categoryId);
 export const fetchSeriesCategories = () => api.seriesCategories();
