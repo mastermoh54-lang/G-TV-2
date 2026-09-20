@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "npx wrangler pages deploy out --project-name gmz-tv"
+    "deploy": "npx wrangler deploy"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "^1.20.6",
