@@ -11,7 +11,7 @@ import { useSeriesInfo } from "@/lib/hooks";
 import { useLibrary } from "@/store/library";
 import { ratingNum, yearFrom, cleanName, cn } from "@/lib/utils";
 import { streamSrc } from "@/lib/api";
-import { tmdb } from "@/lib/tmdb";
+import { tmdb } from "@/lib/tmdb/client";
 import type { Episode } from "@/lib/xtream/types";
 
 function EpisodeImage({
