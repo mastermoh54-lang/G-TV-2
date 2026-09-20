@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { PageSkeleton } from "@/components/ui/PageSkeleton";
-// Importe tes composants habituels de la page d'accueil ici (Catalog, Hero, etc.)
+import { TopBar } from "@/components/layout/TopBar";
+import { Hero } from "@/components/catalog/Hero";
+import { Shelf } from "@/components/catalog/Shelf";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
@@ -16,8 +18,13 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen text-white">
-      {/* Insère ici le contenu principal de ta page d'accueil */}
-    </main>
+    <div className="space-y-8 pb-12">
+      <TopBar title="Accueil" />
+      <Hero />
+      <div className="space-y-6 px-4 sm:px-8">
+        <Shelf title="Récemment ajoutés" type="movie" />
+        <Shelf title="Séries populaires" type="series" />
+      </div>
+    </div>
   );
 }
