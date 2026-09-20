@@ -10,22 +10,10 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
-
-// Railway est utilisé uniquement pour VOD + SERIES.
-// La variable doit être définie dans les variables d'environnement
-// de Vercel.
-//
-// Exemple :
+// Railway est utilisé uniquement pour les films et les séries.
+// Définir dans Vercel :
 // NEXT_PUBLIC_RAILWAY_URL=https://ton-projet.up.railway.app
-//
 const RAILWAY_URL = (process.env.NEXT_PUBLIC_RAILWAY_URL || "").replace(/\/$/, "");
-
-// ============================================================
-// GENERIC JSON FETCHER
-// ============================================================
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
@@ -37,13 +25,8 @@ async function getJson<T>(url: string): Promise<T> {
 
     try {
       const j = await res.json();
-
-      if (j?.error) {
-        msg = j.error;
-      }
-    } catch {
-      // Ignore JSON parsing errors
-    }
+      if (j?.error) msg = j.error;
+    } catch {}
 
     const err = new Error(msg) as Error & { status: number };
     err.status = res.status;
@@ -54,17 +37,11 @@ async function getJson<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ============================================================
-// XTREAM API HELPER
-// ============================================================
-
 const x = (
   action: string,
   params: Record<string, string | number | undefined> = {},
 ) => {
-  const sp = new URLSearchParams({
-    action,
-  });
+  const sp = new URLSearchParams({ action });
 
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null && v !== "") {
@@ -75,15 +52,7 @@ const x = (
   return `/api/xtream?${sp.toString()}`;
 };
 
-// ============================================================
-// API
-// ============================================================
-
 export const api = {
-  // ----------------------------------------------------------
-  // SESSION
-  // ----------------------------------------------------------
-
   session: () =>
     getJson<{
       authenticated: boolean;
@@ -92,10 +61,6 @@ export const api = {
       user_info?: AuthResponse["user_info"];
       server_info?: AuthResponse["server_info"];
     }>("/api/auth"),
-
-  // ----------------------------------------------------------
-  // LOGIN
-  // ----------------------------------------------------------
 
   login: async (
     baseUrl: string,
@@ -128,20 +93,15 @@ export const api = {
     };
   },
 
-  // ----------------------------------------------------------
-  // LOGOUT
-  // ----------------------------------------------------------
-
   logout: () =>
     fetch("/api/auth", {
       method: "DELETE",
       credentials: "include",
     }),
 
-  // ----------------------------------------------------------
-  // LIVE
-  // Vercel
-  // ----------------------------------------------------------
+  // -------------------------
+  // LIVE → VERCEL
+  // -------------------------
 
   liveCategories: () =>
     getJson<Category[]>(
@@ -155,11 +115,10 @@ export const api = {
       }),
     ),
 
-  // ----------------------------------------------------------
-  // VOD
-  // Catalogue → Vercel
-  // Stream → Railway
-  // ----------------------------------------------------------
+  // -------------------------
+  // VOD → VERCEL catalogue
+  // STREAM → RAILWAY
+  // -------------------------
 
   vodCategories: () =>
     getJson<Category[]>(
@@ -180,11 +139,10 @@ export const api = {
       }),
     ),
 
-  // ----------------------------------------------------------
-  // SERIES
-  // Catalogue → Vercel
-  // Stream → Railway
-  // ----------------------------------------------------------
+  // -------------------------
+  // SERIES → VERCEL catalogue
+  // STREAM → RAILWAY
+  // -------------------------
 
   seriesCategories: () =>
     getJson<Category[]>(
@@ -205,10 +163,9 @@ export const api = {
       }),
     ),
 
-  // ----------------------------------------------------------
-  // EPG
-  // Vercel
-  // ----------------------------------------------------------
+  // -------------------------
+  // EPG → VERCEL
+  // -------------------------
 
   epg: (
     streamId: string | number,
@@ -222,58 +179,40 @@ export const api = {
 };
 
 // ============================================================
-// STREAM URL
+// STREAM ROUTING
 // ============================================================
 
 export function streamSrc(
   kind: StreamKind,
   id: string | number,
-  ext = "ts",
+  ext = "mp4",
 ): string {
   const path =
     `/api/stream?type=${encodeURIComponent(String(kind))}` +
     `&id=${encodeURIComponent(String(id))}` +
     `&ext=${encodeURIComponent(ext)}`;
 
-  // ----------------------------------------------------------
-  // LIVE
-  // ----------------------------------------------------------
-  //
-  // Live fonctionne sur Vercel.
-  //
+  // LIVE → VERCEL
   if (kind === "live") {
     return path;
   }
 
-  // ----------------------------------------------------------
-  // VOD / SERIES
-  // ----------------------------------------------------------
-  //
-  // VOD et Series passent par Railway.
-  //
-  if (kind === "vod" || kind === "series") {
+  // MOVIE + SERIES → RAILWAY
+  if (kind === "movie" || kind === "series") {
     if (!RAILWAY_URL) {
       console.error(
         "NEXT_PUBLIC_RAILWAY_URL is not configured.",
       );
 
-      // Retour Vercel comme fallback
+      // Fallback Vercel
       return path;
     }
 
     return `${RAILWAY_URL}${path}`;
   }
 
-  // ----------------------------------------------------------
-  // FALLBACK
-  // ----------------------------------------------------------
-
   return path;
 }
-
-// ============================================================
-// RESOLVE
-// ============================================================
 
 export async function resolveSrc(
   kind: StreamKind,
@@ -290,10 +229,6 @@ export async function resolveSrc(
     ext,
   };
 }
-
-// ============================================================
-// SERIES HELPERS
-// ============================================================
 
 export const fetchSeries = (
   categoryId?: string,
