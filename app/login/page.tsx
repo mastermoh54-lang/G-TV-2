@@ -20,13 +20,9 @@ export default function LoginPage() {
     setError(null);
     
     try {
-      // ✅ ON UTILISE LA VARIABLE D'ENVIRONNEMENT ICI
-      const apiUrl = process.env.NEXT_PUBLIC_VERCEL_URL;
+      // ✅ ON CIBLE LE DOMAINE LOCAL (CLOUDFLARE) POUR CONTOURNER LE CORS VIA LE PROXY
+      const apiUrl = window.location.origin;
       
-      if (!apiUrl) {
-        throw new Error("Erreur de configuration : L'URL de l'API est manquante.");
-      }
-
       const url = normalizeBaseUrl(apiUrl);
       const response = await api.login(url, username, password);
       
