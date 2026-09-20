@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2, ArrowRight, User, Lock, Play } from "lucide-react";
 import { api } from "@/lib/api";
 import { normalizeBaseUrl } from "@/lib/xtream/urls";
@@ -11,7 +10,6 @@ import { cn } from "@/lib/utils";
 const HARDCODED_HOST = "https://gmztv.vercel.app";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,8 +22,12 @@ export default function LoginPage() {
     try {
       const url = normalizeBaseUrl(HARDCODED_HOST);
       await api.login(url, username, password);
-      router.replace("/");
-      router.refresh();
+      
+      // ✅ LA SOLUTION ANTI-BOUCLE EST ICI
+      // On n'utilise plus le "router" de Next.js pour éviter son cache capricieux.
+      // On force le navigateur à recharger la page complètement avec le nouveau cookie.
+      window.location.href = "/";
+      
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connexion échouée");
       setBusy(false);
