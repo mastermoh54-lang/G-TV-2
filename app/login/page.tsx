@@ -20,8 +20,10 @@ export default function LoginPage() {
     setError(null);
     
     try {
-      // ✅ ON CIBLE LE DOMAINE LOCAL (CLOUDFLARE) POUR CONTOURNER LE CORS VIA LE PROXY
-      const apiUrl = window.location.origin;
+      // ✅ ON UTILISE UNE CHAÎNE VIDE POUR L'URL API
+      // Cela force l'application à utiliser son propre backend Cloudflare en relatif (/api/auth)
+      // au lieu d'essayer de contacter Vercel, ce qui élimine le problème de CORS.
+      const apiUrl = ""; 
       
       const url = normalizeBaseUrl(apiUrl);
       const response = await api.login(url, username, password);
