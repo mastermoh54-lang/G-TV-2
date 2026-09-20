@@ -4,36 +4,51 @@ import type { XtreamCredentials } from "./xtream/types";
 const COOKIE = "G-TV_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
-// ⚠️ DEFINISSEZ VOTRE SERVEUR XTREAM ICI :
 const HARDCODED_HOST = "https://gmztv.vercel.app";
 
 /**
- * Credentials are kept in an httpOnly cookie so the provider username/password
- * never touch client JS. This is a local, single-user app — the cookie is the
- * source of truth for the server-side proxy. Not encrypted (runs on localhost).
+ * Garde-fou pour vérifier si Next.js est en train d'exécuter un build statique.
  */
+function isBuilding(): boolean {
+  return process.env.NEXT_PHASE === "phase-production-build" || typeof window !== "undefined";
+}
+
 export async function setSessionCookie(creds: XtreamCredentials): Promise<void> {
-  const jar = await cookies();
-  const value = Buffer.from(JSON.stringify(creds), "utf8").toString("base64");
-  jar.set(COOKIE, value, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  if (isBuilding()) return;
+  try {
+    const jar = await cookies();
+    const value = Buffer.from(JSON.stringify(creds), "utf8").toString("base64");
+    jar.set(COOKIE, value, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: MAX_AGE,
+    });
+  } catch {
+    // Ignorer en mode export SPA client
+  }
 }
 
 export async function clearSessionCookie(): Promise<void> {
-  const jar = await cookies();
-  jar.delete(COOKIE);
+  if (isBuilding()) return;
+  try {
+    const jar = await cookies();
+    jar.delete(COOKIE);
+  } catch {
+    // Ignorer en mode export SPA client
+  }
 }
 
 export async function getSession(): Promise<XtreamCredentials | null> {
-  const jar = await cookies();
-  const raw = jar.get(COOKIE)?.value;
-  if (!raw) return null;
+  // Empêche Next.js d'exécuter cookies() pendant le pré-rendu statique
+  if (isBuilding()) return null;
+
   try {
+    const jar = await cookies();
+    const raw = jar.get(COOKIE)?.value;
+    if (!raw) return null;
+    
     const creds = JSON.parse(Buffer.from(raw, "base64").toString("utf8")) as XtreamCredentials;
     if (!creds.baseUrl) {
       creds.baseUrl = HARDCODED_HOST;
