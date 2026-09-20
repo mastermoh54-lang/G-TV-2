@@ -1,17 +1,24 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'standalone', // Garde bien ça pour Cloudflare
+  output: 'standalone', // Requis pour OpenNext/Cloudflare
   typescript: {
     ignoreBuildErrors: true,
   },
+  // 👇 LE TUNNEL SECRET EST ICI 👇
   async rewrites() {
     return [
       {
-        // Intercepte tout ce qui commence par /api/ sur ton frontend
-        source: '/api/:path*',
-        // Le relaie instantanément et silencieusement à Vercel
-        destination: 'https://gmztv-live.vercel.app/api/:path*'
+        source: '/api/auth',
+        destination: 'https://gmztv-live.vercel.app/api/auth'
+      },
+      {
+        source: '/api/xtream',
+        destination: 'https://gmztv-live.vercel.app/api/xtream'
+      },
+      {
+        source: '/api/epg',
+        destination: 'https://gmztv-live.vercel.app/api/epg'
       }
     ]
   }
