@@ -1,4 +1,3 @@
-// Client-side fetchers — all same-origin, hitting our proxy routes.
 import type {
   AuthResponse,
   Category,
@@ -11,8 +10,11 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
+// AUCUN LIEN EN DUR : Utilisation stricte des variables d'environnement
+const RAILWAY_URL = process.env.NEXT_PUBLIC_RAILWAY_URL || "";
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "same-origin" });
+  const res = await fetch(url, { credentials: "include" });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
@@ -35,7 +37,6 @@ const x = (action: string, params: Record<string, string | number | undefined> =
 };
 
 export const api = {
-  // auth
   session: () =>
     getJson<{
       authenticated: boolean;
@@ -50,16 +51,15 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, username, password }),
-      credentials: "same-origin",
+      credentials: "include",
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Login failed");
     return data as { ok: true; user_info: AuthResponse["user_info"]; server_info: AuthResponse["server_info"] };
   },
 
-  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "same-origin" }),
+  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "include" }),
 
-  // catalog
   liveCategories: () => getJson<Category[]>(x("get_live_categories")),
   liveStreams: (categoryId?: string) => getJson<LiveStream[]>(x("get_live_streams", { category_id: categoryId })),
   vodCategories: () => getJson<Category[]>(x("get_vod_categories")),
@@ -68,21 +68,16 @@ export const api = {
   seriesCategories: () => getJson<Category[]>(x("get_series_categories")),
   series: (categoryId?: string) => getJson<Series[]>(x("get_series", { category_id: categoryId })),
   seriesInfo: (id: string | number) => getJson<SeriesInfo>(x("get_series_info", { series_id: id })),
-
-  // epg (decoded)
   epg: (streamId: string | number, limit = 8) =>
     getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
 };
 
-/** Same-origin proxied media URL (used for live). */
 export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
-  return `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
+  const path = `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
+  // Live utilise le serveur courant (Vercel), VOD/Séries basculent sur l'URL de l'environnement Railway
+  return kind === "live" ? path : `${RAILWAY_URL}${path}`;
 }
 
-/** 
- * BOUCLIER ANTI-REQUETES FANTOMES : 
- * Court-circuite l'ancienne logique pour laisser /api/show et /api/vod gérer la lecture.
- */
 export async function resolveSrc(
   kind: StreamKind,
   id: string | number,
@@ -91,6 +86,5 @@ export async function resolveSrc(
   return { url: null, directOk: true, ext };
 }
 
-// Exportations explicites pour la page Séries
 export const fetchSeries = (categoryId?: string) => api.series(categoryId);
 export const fetchSeriesCategories = () => api.seriesCategories();
