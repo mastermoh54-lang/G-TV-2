@@ -7,6 +7,9 @@ import { api } from "@/lib/api";
 import { normalizeBaseUrl } from "@/lib/xtream/urls";
 import { cn } from "@/lib/utils";
 
+// ⚠️ DEVISSEZ VOTRE SERVEUR XTREAM ICI :
+const HARDCODED_HOST = "https://gmztv.vercel.app";
+
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -18,29 +21,13 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    
     try {
-      // ✅ ON RESTAURE L'URL DU PROXY VERCEL ICI
-      // Cela ne causera plus de CORS car l'appel réseau reste local grâce au fichier lib/api.ts
-      // Cette URL sert juste à dire au backend interne : "Vérifie ces identifiants sur cette adresse"
-      const apiUrl = process.env.NEXT_PUBLIC_VERCEL_URL;
-      
-      if (!apiUrl) {
-        throw new Error("Erreur de configuration : L'URL de l'API est manquante.");
-      }
-      
-      const url = normalizeBaseUrl(apiUrl);
-      const response = await api.login(url, username, password);
-      
-      console.log("Connexion réussie :", response);
-
-      // Redirection après succès
-      router.replace("/"); 
+      const url = normalizeBaseUrl(HARDCODED_HOST);
+      await api.login(url, username, password);
+      router.replace("/");
       router.refresh();
-      
     } catch (e) {
-      console.error("Erreur de connexion :", e);
-      setError(e instanceof Error ? e.message : "Identifiants incorrects ou serveur injoignable");
+      setError(e instanceof Error ? e.message : "Connexion échouée");
       setBusy(false);
     }
   }
