@@ -1,13 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gmz-tv-pages",
+  "name": "gmz-tv",
   "compatibility_date": "2026-09-11",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
   "assets": {
-    "directory": "./out",
-    "binding": "ASSETS"
+    "directory": "./out"
   },
   "vars": {
     "NEXT_PUBLIC_ADSERVER_API": "https://gmz.alwaysdata.net/api.php",
