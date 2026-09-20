@@ -1,7 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "gmz-tv",
-  "pages_build_output_dir": "out",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./out",
+    "binding": "ASSETS"
+  },
   "vars": {
     "NEXT_PUBLIC_ADSERVER_API": "https://gmz.alwaysdata.net/api.php",
     "NEXT_PUBLIC_RAILWAY_URL": "https://g-tv-2-production.up.railway.app",
