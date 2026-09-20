@@ -10,10 +10,8 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
-// Railway est utilisé uniquement pour les films et les séries.
-// Définir dans Vercel :
-// NEXT_PUBLIC_RAILWAY_URL=https://ton-projet.up.railway.app
-const RAILWAY_URL = (process.env.NEXT_PUBLIC_RAILWAY_URL || "").replace(/\/$/, "");
+// URL de Railway écrite en dur pour forcer le routage et contourner le bug de Vercel
+const RAILWAY_URL = "https://g-tv-2-production.up.railway.app";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
@@ -199,15 +197,6 @@ export function streamSrc(
 
   // MOVIE + SERIES → RAILWAY
   if (kind === "movie" || kind === "series") {
-    if (!RAILWAY_URL) {
-      console.error(
-        "NEXT_PUBLIC_RAILWAY_URL is not configured.",
-      );
-
-      // Fallback Vercel
-      return path;
-    }
-
     return `${RAILWAY_URL}${path}`;
   }
 
