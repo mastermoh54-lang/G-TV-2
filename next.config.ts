@@ -1,8 +1,5 @@
 import type { NextConfig } from 'next';
 
-// L'URL est gérée par l'environnement Vercel, pas codée en dur
-const FRONTEND_URL = process.env.FRONTEND_URL || "";
-
 const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
@@ -14,8 +11,8 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Credentials", value: "true" },
-          // On injecte la variable dynamiquement
-          { key: "Access-Control-Allow-Origin", value: FRONTEND_URL },
+          // On écrit l'URL Cloudflare directement en dur ici pour régler le problème CORS :
+          { key: "Access-Control-Allow-Origin", value: "https://gmz-tv.matv505050.workers.dev" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
           { key: "Access-Control-Allow-Headers", value: "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" },
         ]
