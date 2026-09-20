@@ -5,14 +5,15 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   
-  // 1. Autoriser Cloudflare (CORS)
+  // Configuration des en-têtes CORS pour Vercel
   async headers() {
     return [
       {
         source: "/api/:path*",
         headers: [
           { key: "Access-Control-Allow-Credentials", value: "true" },
-          { key: "Access-Control-Allow-Origin", value: "*" },
+          // Remplace l'étoile "*" par l'URL exacte du domaine Cloudflare
+          { key: "Access-Control-Allow-Origin", value: "https://gmz-tv.matv505050.workers.dev" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
           { key: "Access-Control-Allow-Headers", value: "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" },
         ]
@@ -20,7 +21,6 @@ const nextConfig: NextConfig = {
     ]
   },
 
-  // 2. Tes redirections vers Railway et Vercel
   async rewrites() {
     return [
       // --- VERCEL : Standalone Live TV & Services Xtream ---
@@ -61,7 +61,7 @@ const nextConfig: NextConfig = {
         destination: 'https://g-tv-2.vercel.app/api/image-proxy',
       },
 
-      // --- RAILWAY : VOD Films & Séries (avec sous-routes hls/stream) ---
+      // --- RAILWAY : VOD Films & Séries ---
       {
         source: '/api/vod',
         destination: 'https://g-tv-2-production.up.railway.app/api/vod',
