@@ -1,20 +1,24 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
-import { Sidebar, MobileNav } from "@/components/layout/Sidebar";
-import { Aurora } from "@/components/ui/Aurora";
-import { CatalogWarmer } from "@/components/CatalogWarmer";
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "@/styles/globals.css";
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await getSession();
-  if (!session) redirect("/login");
+const inter = Inter({ subsets: ["latin"] });
 
+export const metadata: Metadata = {
+  title: "G-TV",
+  description: "Application IPTV & Streaming",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex min-h-dvh">
-      <Aurora />
-      <CatalogWarmer />
-      <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">{children}</main>
-      <MobileNav />
-    </div>
+    <html lang="fr" className="dark">
+      <body className={`${inter.className} bg-ink-950 text-white antialiased`}>
+        {children}
+      </body>
+    </html>
   );
 }
