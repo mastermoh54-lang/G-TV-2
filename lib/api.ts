@@ -10,33 +10,80 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
-// AUCUN LIEN EN DUR : Utilisation stricte des variables d'environnement
-const RAILWAY_URL = process.env.NEXT_PUBLIC_RAILWAY_URL || "";
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+// Railway est utilisé uniquement pour VOD + SERIES.
+// La variable doit être définie dans les variables d'environnement
+// de Vercel.
+//
+// Exemple :
+// NEXT_PUBLIC_RAILWAY_URL=https://ton-projet.up.railway.app
+//
+const RAILWAY_URL = (process.env.NEXT_PUBLIC_RAILWAY_URL || "").replace(/\/$/, "");
+
+// ============================================================
+// GENERIC JSON FETCHER
+// ============================================================
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include" });
+  const res = await fetch(url, {
+    credentials: "include",
+  });
+
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
+
     try {
       const j = await res.json();
-      if (j?.error) msg = j.error;
-    } catch {}
+
+      if (j?.error) {
+        msg = j.error;
+      }
+    } catch {
+      // Ignore JSON parsing errors
+    }
+
     const err = new Error(msg) as Error & { status: number };
     err.status = res.status;
+
     throw err;
   }
+
   return res.json() as Promise<T>;
 }
 
-const x = (action: string, params: Record<string, string | number | undefined> = {}) => {
-  const sp = new URLSearchParams({ action });
+// ============================================================
+// XTREAM API HELPER
+// ============================================================
+
+const x = (
+  action: string,
+  params: Record<string, string | number | undefined> = {},
+) => {
+  const sp = new URLSearchParams({
+    action,
+  });
+
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== null && v !== "") sp.set(k, String(v));
+    if (v !== undefined && v !== null && v !== "") {
+      sp.set(k, String(v));
+    }
   }
+
   return `/api/xtream?${sp.toString()}`;
 };
 
+// ============================================================
+// API
+// ============================================================
+
 export const api = {
+  // ----------------------------------------------------------
+  // SESSION
+  // ----------------------------------------------------------
+
   session: () =>
     getJson<{
       authenticated: boolean;
@@ -46,45 +93,211 @@ export const api = {
       server_info?: AuthResponse["server_info"];
     }>("/api/auth"),
 
-  login: async (baseUrl: string, username: string, password: string) => {
+  // ----------------------------------------------------------
+  // LOGIN
+  // ----------------------------------------------------------
+
+  login: async (
+    baseUrl: string,
+    username: string,
+    password: string,
+  ) => {
     const res = await fetch("/api/auth", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, username, password }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        baseUrl,
+        username,
+        password,
+      }),
       credentials: "include",
     });
+
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || "Login failed");
-    return data as { ok: true; user_info: AuthResponse["user_info"]; server_info: AuthResponse["server_info"] };
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Login failed");
+    }
+
+    return data as {
+      ok: true;
+      user_info: AuthResponse["user_info"];
+      server_info: AuthResponse["server_info"];
+    };
   },
 
-  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "include" }),
+  // ----------------------------------------------------------
+  // LOGOUT
+  // ----------------------------------------------------------
 
-  liveCategories: () => getJson<Category[]>(x("get_live_categories")),
-  liveStreams: (categoryId?: string) => getJson<LiveStream[]>(x("get_live_streams", { category_id: categoryId })),
-  vodCategories: () => getJson<Category[]>(x("get_vod_categories")),
-  vodStreams: (categoryId?: string) => getJson<VodStream[]>(x("get_vod_streams", { category_id: categoryId })),
-  vodInfo: (id: string | number) => getJson<VodInfo>(x("get_vod_info", { vod_id: id })),
-  seriesCategories: () => getJson<Category[]>(x("get_series_categories")),
-  series: (categoryId?: string) => getJson<Series[]>(x("get_series", { category_id: categoryId })),
-  seriesInfo: (id: string | number) => getJson<SeriesInfo>(x("get_series_info", { series_id: id })),
-  epg: (streamId: string | number, limit = 8) =>
-    getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
+  logout: () =>
+    fetch("/api/auth", {
+      method: "DELETE",
+      credentials: "include",
+    }),
+
+  // ----------------------------------------------------------
+  // LIVE
+  // Vercel
+  // ----------------------------------------------------------
+
+  liveCategories: () =>
+    getJson<Category[]>(
+      x("get_live_categories"),
+    ),
+
+  liveStreams: (categoryId?: string) =>
+    getJson<LiveStream[]>(
+      x("get_live_streams", {
+        category_id: categoryId,
+      }),
+    ),
+
+  // ----------------------------------------------------------
+  // VOD
+  // Catalogue → Vercel
+  // Stream → Railway
+  // ----------------------------------------------------------
+
+  vodCategories: () =>
+    getJson<Category[]>(
+      x("get_vod_categories"),
+    ),
+
+  vodStreams: (categoryId?: string) =>
+    getJson<VodStream[]>(
+      x("get_vod_streams", {
+        category_id: categoryId,
+      }),
+    ),
+
+  vodInfo: (id: string | number) =>
+    getJson<VodInfo>(
+      x("get_vod_info", {
+        vod_id: id,
+      }),
+    ),
+
+  // ----------------------------------------------------------
+  // SERIES
+  // Catalogue → Vercel
+  // Stream → Railway
+  // ----------------------------------------------------------
+
+  seriesCategories: () =>
+    getJson<Category[]>(
+      x("get_series_categories"),
+    ),
+
+  series: (categoryId?: string) =>
+    getJson<Series[]>(
+      x("get_series", {
+        category_id: categoryId,
+      }),
+    ),
+
+  seriesInfo: (id: string | number) =>
+    getJson<SeriesInfo>(
+      x("get_series_info", {
+        series_id: id,
+      }),
+    ),
+
+  // ----------------------------------------------------------
+  // EPG
+  // Vercel
+  // ----------------------------------------------------------
+
+  epg: (
+    streamId: string | number,
+    limit = 8,
+  ) =>
+    getJson<{ epg_listings: EpgListing[] }>(
+      `/api/epg?stream_id=${encodeURIComponent(
+        String(streamId),
+      )}&limit=${encodeURIComponent(String(limit))}`,
+    ),
 };
 
-export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
-  const path = `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
-  // Live utilise le serveur courant (Vercel), VOD/Séries basculent sur l'URL de l'environnement Railway
-  return kind === "live" ? path : `${RAILWAY_URL}${path}`;
+// ============================================================
+// STREAM URL
+// ============================================================
+
+export function streamSrc(
+  kind: StreamKind,
+  id: string | number,
+  ext = "ts",
+): string {
+  const path =
+    `/api/stream?type=${encodeURIComponent(String(kind))}` +
+    `&id=${encodeURIComponent(String(id))}` +
+    `&ext=${encodeURIComponent(ext)}`;
+
+  // ----------------------------------------------------------
+  // LIVE
+  // ----------------------------------------------------------
+  //
+  // Live fonctionne sur Vercel.
+  //
+  if (kind === "live") {
+    return path;
+  }
+
+  // ----------------------------------------------------------
+  // VOD / SERIES
+  // ----------------------------------------------------------
+  //
+  // VOD et Series passent par Railway.
+  //
+  if (kind === "vod" || kind === "series") {
+    if (!RAILWAY_URL) {
+      console.error(
+        "NEXT_PUBLIC_RAILWAY_URL is not configured.",
+      );
+
+      // Retour Vercel comme fallback
+      return path;
+    }
+
+    return `${RAILWAY_URL}${path}`;
+  }
+
+  // ----------------------------------------------------------
+  // FALLBACK
+  // ----------------------------------------------------------
+
+  return path;
 }
+
+// ============================================================
+// RESOLVE
+// ============================================================
 
 export async function resolveSrc(
   kind: StreamKind,
   id: string | number,
   ext: string,
-): Promise<{ url: string | null; directOk: boolean; ext: string }> {
-  return { url: null, directOk: true, ext };
+): Promise<{
+  url: string | null;
+  directOk: boolean;
+  ext: string;
+}> {
+  return {
+    url: null,
+    directOk: true,
+    ext,
+  };
 }
 
-export const fetchSeries = (categoryId?: string) => api.series(categoryId);
-export const fetchSeriesCategories = () => api.seriesCategories();
+// ============================================================
+// SERIES HELPERS
+// ============================================================
+
+export const fetchSeries = (
+  categoryId?: string,
+) => api.series(categoryId);
+
+export const fetchSeriesCategories = () =>
+  api.seriesCategories();
