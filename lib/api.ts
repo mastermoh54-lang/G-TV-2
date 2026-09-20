@@ -1,4 +1,4 @@
-// Client-side fetchers — all same-origin, hitting our proxy routes.
+// Client-side & Server-side fetchers
 import type {
   AuthResponse,
   Category,
@@ -11,8 +11,17 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
+const VERCEL_URL = process.env.NEXT_PUBLIC_VERCEL_URL || "https://gmztv-live.vercel.app";
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "same-origin" });
+  // ✅ LA CORRECTION DU SKELETON INFINI EST ICI
+  // Si exécuté sur le Serveur (SSR), on force l'URL absolue Vercel pour éviter le blocage.
+  // Si exécuté sur le Client (Navigateur), on garde l'URL relative pour profiter du tunnel Cloudflare.
+  const isServer = typeof window === "undefined";
+  const targetUrl = isServer && url.startsWith("/") ? `${VERCEL_URL}${url}` : url;
+
+  // ✅ "include" est obligatoire pour que la session passe dans le tunnel
+  const res = await fetch(targetUrl, { credentials: "include" });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
@@ -50,14 +59,14 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, username, password }),
-      credentials: "same-origin",
+      credentials: "include", // ✅ Obligatoire ici aussi
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Login failed");
     return data as { ok: true; user_info: AuthResponse["user_info"]; server_info: AuthResponse["server_info"] };
   },
 
-  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "same-origin" }),
+  logout: () => fetch("/api/auth", { method: "DELETE", credentials: "include" }), // ✅ Obligatoire ici aussi
 
   // catalog
   liveCategories: () => getJson<Category[]>(x("get_live_categories")),
