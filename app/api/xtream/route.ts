@@ -1,99 +1,304 @@
-import { NextResponse } from "next/server";
-import { dispatch, XtreamError } from "@/lib/xtream/client";
 import { requireSession } from "@/lib/session";
-import { cachedWithValidation } from "@/lib/xtream/cache";
+import { buildStreamUrl } from "@/lib/xtream/urls";
+import type { StreamKind } from "@/lib/xtream/types";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const HOUR = 60 * 60 * 1000;
-const TTL: Record<string, number> = {
-  get_vod_streams: 3 * HOUR,
-  get_series: 3 * HOUR,
-  get_live_streams: 2 * HOUR,
-  get_vod_categories: 12 * HOUR,
-  get_series_categories: 12 * HOUR,
-  get_live_categories: 12 * HOUR,
-  get_vod_info: 6 * HOUR,
-  get_series_info: 6 * HOUR,
-};
+// URL Railway définie dans les variables d'environnement Vercel
+const RAILWAY_URL = (process.env.NEXT_PUBLIC_RAILWAY_URL || "").replace(/\/$/, "");
+
+// Secret partagé entre Vercel et Railway
+const RAILWAY_SECRET = process.env.GTV_RAILWAY_SECRET || "";
+
+const UA = "VLC/3.0.20 LibVLC/3.0.20";
 
 export async function GET(req: Request) {
-  let creds;
   try {
-    creds = await requireSession();
-  } catch {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+    // ============================================================
+    // SESSION VERCEL
+    // ============================================================
 
-  const { searchParams } = new URL(req.url);
-  const action = searchParams.get("action");
-  if (!action) return NextResponse.json({ error: "Missing action" }, { status: 400 });
+    const creds = await requireSession();
 
-  const params: Record<string, string | undefined> = {};
-  for (const [k, v] of searchParams.entries()) {
-    if (k !== "action" && k !== "nocache") params[k] = v;
-  }
+    const { searchParams, origin } = new URL(req.url);
 
-  // 1. Normalisation universelle de series_id pour get_series_info
-  if (action === "get_series_info") {
-    const seriesId = params.series_id || params.id;
-    if (seriesId) {
-      params.series_id = seriesId;
-    }
-  }
+    const type = searchParams.get("type") as StreamKind | null;
+    const id = searchParams.get("id");
+    let ext = searchParams.get("ext") || "mp4";
 
-  const noCache = searchParams.get("nocache") === "1";
-
-  try {
-    const ttl = TTL[action] ?? 60 * 1000;
-    
-    // Trier les clés de params pour garantir une clé de cache déterministe
-    const sortedParams = Object.keys(params).sort().reduce((acc, k) => {
-      acc[k] = params[k];
-      return acc;
-    }, {} as Record<string, string | undefined>);
-
-    const key = `${creds.username}|${action}|${JSON.stringify(sortedParams)}`;
-
-    // 2. Si nocache=1 est passé, exécute directement sans lire/écrire le cache
-    if (noCache) {
-      const data = await dispatch(creds, action, params);
-      return NextResponse.json(data, {
-        headers: { "Cache-Control": "no-store" },
+    if (!type || !id) {
+      return new Response("Bad request", {
+        status: 400,
       });
     }
 
-    // 3. Récupération de l'empreinte serveur (Fast Check léger) pour valider l'état du cache
-    let serverHash = `${creds.username}_${creds.password}`;
-    try {
-      // Vérification rapide de l'état du compte (user_info)
-      const userState = await dispatch(creds, "user_info", {});
-      if (userState?.user_info) {
-        serverHash = `${creds.username}_${userState.user_info.status}_${userState.user_info.exp_date}_${userState.user_info.active_cons}`;
-      }
-    } catch {
-      // En cas d'échec du check léger, on continue avec le hash de fallback
+    // ============================================================
+    // LIVE
+    // ============================================================
+    //
+    // Live reste entièrement sur Vercel.
+    //
+    // Vercel /api/stream
+    //       ↓
+    // Vercel /api/hls
+    //       ↓
+    // Xtream
+    //
+    // ============================================================
+
+    if (type === "live") {
+      return NextResponse.redirect(
+        `${origin}/api/hls?id=${encodeURIComponent(id)}`,
+      );
     }
 
-    // 4. Utilisation du cache intelligent avec validation par hash
-    const data = await cachedWithValidation(key, serverHash, ttl, async () => {
-      const result = await dispatch(creds, action, params);
-      
-      // Sécurité : Ne pas mettre en cache si le résultat est nul ou vide
-      if (!result || (typeof result === "object" && Object.keys(result).length === 0)) {
-        throw new Error("Empty response from upstream provider");
-      }
-      return result;
-    });
+    // ============================================================
+    // MOVIE / SERIES
+    // ============================================================
 
-    return NextResponse.json(data, {
-      headers: { "Cache-Control": "private, max-age=60" },
-    });
+    if (type !== "movie" && type !== "series") {
+      return new Response("Invalid stream type", {
+        status: 400,
+      });
+    }
+
+    // Railway doit être configuré
+    if (!RAILWAY_URL) {
+      return new Response(
+        "Railway URL is not configured",
+        {
+          status: 500,
+        },
+      );
+    }
+
+    // Secret obligatoire
+    if (!RAILWAY_SECRET) {
+      return new Response(
+        "Railway secret is not configured",
+        {
+          status: 500,
+        },
+      );
+    }
+
+    // ============================================================
+    // NORMALISATION EXTENSION
+    // ============================================================
+
+    if (ext.toLowerCase() === "mkv") {
+      ext = "mp4";
+    }
+
+    // ============================================================
+    // URL DU STREAM XTREAM
+    // ============================================================
+    //
+    // On utilise buildStreamUrl uniquement pour générer
+    // l'URL réelle côté provider.
+    //
+    // IMPORTANT :
+    // Cette URL n'est PAS envoyée au navigateur.
+    // Elle est envoyée à Railway.
+    //
+    // ============================================================
+
+    const targetUrl = buildStreamUrl(
+      creds,
+      type,
+      id,
+      ext,
+    );
+
+    // ============================================================
+    // ENCODAGE DES CREDENTIALS
+    // ============================================================
+    //
+    // Les credentials restent côté serveur.
+    //
+    // Railway reçoit :
+    //
+    // X-GTV-Credentials: base64(...)
+    //
+    // ============================================================
+
+    const credentialsPayload = Buffer.from(
+      JSON.stringify({
+        baseUrl: creds.baseUrl,
+        username: creds.username,
+        password: creds.password,
+      }),
+      "utf8",
+    ).toString("base64");
+
+    // ============================================================
+    // APPEL RAILWAY
+    // ============================================================
+
+    const railwayUrl =
+      `${RAILWAY_URL}/api/stream` +
+      `?type=${encodeURIComponent(type)}` +
+      `&id=${encodeURIComponent(id)}` +
+      `&ext=${encodeURIComponent(ext)}`;
+
+    const headers: HeadersInit = {
+      "User-Agent": UA,
+
+      // Authentification Vercel → Railway
+      "X-GTV-Secret": RAILWAY_SECRET,
+
+      // Credentials Xtream
+      "X-GTV-Credentials": credentialsPayload,
+
+      // Indique à Railway l'URL provider à utiliser.
+      // Railway peut l'utiliser directement.
+      "X-GTV-Target": targetUrl,
+
+      Accept: "*/*",
+    };
+
+    // ============================================================
+    // RANGE
+    // ============================================================
+    //
+    // Indispensable pour :
+    // - seek
+    // - avance rapide
+    // - reprise
+    // - lecture partielle
+    //
+    // ============================================================
+
+    const range = req.headers.get("range");
+
+    if (range) {
+      headers["Range"] = range;
+    }
+
+    // ============================================================
+    // FETCH RAILWAY
+    // ============================================================
+
+    const railwayResponse = await fetch(
+      railwayUrl,
+      {
+        method: "GET",
+        headers,
+        redirect: "manual",
+        cache: "no-store",
+      },
+    );
+
+    // ============================================================
+    // ERREUR RAILWAY
+    // ============================================================
+
+    if (!railwayResponse.ok) {
+      const text = await railwayResponse.text().catch(() => "");
+
+      return new Response(
+        text || `Railway stream error (${railwayResponse.status})`,
+        {
+          status: railwayResponse.status,
+        },
+      );
+    }
+
+    // ============================================================
+    // HEADERS DE RÉPONSE
+    // ============================================================
+
+    const responseHeaders = new Headers();
+
+    const contentType =
+      railwayResponse.headers.get("content-type");
+
+    const contentLength =
+      railwayResponse.headers.get("content-length");
+
+    const contentRange =
+      railwayResponse.headers.get("content-range");
+
+    const acceptRanges =
+      railwayResponse.headers.get("accept-ranges");
+
+    if (contentType) {
+      responseHeaders.set(
+        "Content-Type",
+        contentType,
+      );
+    } else {
+      responseHeaders.set(
+        "Content-Type",
+        "video/mp4",
+      );
+    }
+
+    if (contentLength) {
+      responseHeaders.set(
+        "Content-Length",
+        contentLength,
+      );
+    }
+
+    if (contentRange) {
+      responseHeaders.set(
+        "Content-Range",
+        contentRange,
+      );
+    }
+
+    if (acceptRanges) {
+      responseHeaders.set(
+        "Accept-Ranges",
+        acceptRanges,
+      );
+    } else {
+      responseHeaders.set(
+        "Accept-Ranges",
+        "bytes",
+      );
+    }
+
+    responseHeaders.set(
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate",
+    );
+
+    responseHeaders.set(
+      "Access-Control-Allow-Origin",
+      "*",
+    );
+
+    // ============================================================
+    // STREAM
+    // ============================================================
+
+    return new Response(
+      railwayResponse.body,
+      {
+        status: railwayResponse.status,
+        headers: responseHeaders,
+      },
+    );
   } catch (err) {
-    const status = err instanceof XtreamError && err.status ? err.status : 502;
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Upstream error" },
-      { status },
+    console.error(
+      "Stream proxy error:",
+      err,
+    );
+
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Unknown stream error";
+
+    return new Response(
+      `Fatal Error: ${message}`,
+      {
+        status: 500,
+      },
     );
   }
 }
