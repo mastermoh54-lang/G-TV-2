@@ -10,35 +10,14 @@ import type {
   StreamKind,
 } from "./xtream/types";
 
+// URL pour les flux vidéos (Streaming lourd)
 const RAILWAY_URL = process.env.NEXT_PUBLIC_RAILWAY_URL || "";
 const VERCEL_URL = process.env.NEXT_PUBLIC_VERCEL_URL || process.env.NEXT_PUBLIC_LIVE_URL || "https://g-tv-2.vercel.app";
 
-function getTargetBaseUrl(path: string): string {
-  if (typeof window === "undefined") return "";
-
-  const isCloudflare =
-    window.location.hostname.includes("workers.dev") ||
-    window.location.hostname.includes("pages.dev");
-
-  if (!isCloudflare) return "";
-
-  // On ne redirige PLUS /api/auth vers Vercel. Cloudflare s'en charge.
-  if (path.includes("get_live") || path.includes("/api/epg")) {
-    return VERCEL_URL;
-  }
-  
-  if (path.includes("/api/auth")) {
-    return ""; // Chemin relatif : Cloudflare tape sur lui-même
-  }
-
-  return RAILWAY_URL;
-}
-
+// ✅ TOUTES LES DONNÉES (JSON) RESTENT EN LOCAL SUR CLOUDFLARE
+// Cloudflare a ses propres routes /api/auth et /api/xtream. On ne redirige plus rien.
 async function getJson<T>(url: string): Promise<T> {
-  const baseUrl = getTargetBaseUrl(url);
-  const targetUrl = baseUrl ? `${baseUrl}${url}` : url;
-
-  const res = await fetch(targetUrl, { credentials: "include" });
+  const res = await fetch(url, { credentials: "include" });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try {
@@ -71,10 +50,8 @@ export const api = {
     }>("/api/auth"),
 
   login: async (baseUrl: string, username: string, password: string) => {
-    // On force Cloudflare à utiliser sa propre API interne
-    const targetUrl = "/api/auth";
-
-    const res = await fetch(targetUrl, {
+    // Appel local à Cloudflare
+    const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ baseUrl, username, password }),
@@ -86,10 +63,8 @@ export const api = {
   },
 
   logout: async () => {
-    const targetUrl = "/api/auth";
-
     try {
-      await fetch(targetUrl, { method: "DELETE", credentials: "include" });
+      await fetch("/api/auth", { method: "DELETE", credentials: "include" });
     } catch {}
 
     if (typeof window !== "undefined") {
@@ -98,7 +73,7 @@ export const api = {
     }
   },
 
-  // Le reste du fichier reste identique
+  // Catalogue complet géré par Cloudflare localement
   liveCategories: () => getJson<Category[]>(x("get_live_categories")),
   liveStreams: (categoryId?: string) => getJson<LiveStream[]>(x("get_live_streams", { category_id: categoryId })),
   vodCategories: () => getJson<Category[]>(x("get_vod_categories")),
@@ -111,6 +86,8 @@ export const api = {
     getJson<{ epg_listings: EpgListing[] }>(`/api/epg?stream_id=${streamId}&limit=${limit}`),
 };
 
+// ✅ SEULS LES FLUX VIDÉOS (TS, HLS) SONT DÉLÉGUÉS À VERCEL ET RAILWAY
+// Cloudflare crée les balises <video src="..."> pointant vers tes autres serveurs
 export function streamSrc(kind: StreamKind, id: string | number, ext = "ts"): string {
   const path = `/api/stream?type=${kind}&id=${id}&ext=${encodeURIComponent(ext)}`;
   const baseUrl = kind === "live" ? VERCEL_URL : RAILWAY_URL;
