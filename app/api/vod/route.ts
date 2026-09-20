@@ -1,12 +1,14 @@
-// app/api/vod/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
+import { NextResponse } from "next/server"; // Ajout de l'import pour la redirection
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UA = "VLC/3.0.20 LibVLC/3.0.20";
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+// L'URL de ton serveur Railway
+const RAILWAY_URL = "https://g-tv-2-production.up.railway.app";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -29,7 +31,6 @@ async function checkUrl(url: string) {
 
 export async function GET(req: Request) {
   try {
-    const creds = (await requireSession()) as any;
     const { searchParams } = new URL(req.url);
 
     const type = searchParams.get("type") || "movie";
@@ -37,21 +38,58 @@ export async function GET(req: Request) {
     const originalExt = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
+    // 1. Récupération des paramètres cachés du tremplin
+    const directHost = searchParams.get("_h");
+    const directUser = searchParams.get("_u");
+    const directPass = searchParams.get("_p");
+
     if (!id || type === "live") {
       return new Response("Invalid parameters", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
+    let rawHost = "";
+    let u = "";
+    let p = "";
+
+    // === DOUBLE LOGIQUE : VERCEL (TREMPLIN) vs RAILWAY (LECTURE) ===
+    if (directHost && directUser && directPass) {
+      // A. Nous sommes sur RAILWAY (les identifiants sont dans l'URL)
+      rawHost = decodeURIComponent(directHost);
+      u = decodeURIComponent(directUser);
+      p = decodeURIComponent(directPass);
+    } else {
+      // B. Nous sommes sur VERCEL (lecture du cookie)
+      let creds: any;
+      try {
+        creds = (await requireSession()) as any;
+      } catch (e) {
+        return new Response("Non autorisé (Cookie manquant sur Vercel)", { status: 401, headers: NO_CACHE_HEADERS });
+      }
+
+      rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
+      u = creds.username || creds.user || "";
+      p = creds.password || creds.pass || "";
+
+      // Vercel construit l'URL secrète vers Railway
+      const railwayUrl = `${RAILWAY_URL}/api/vod?type=${type}&id=${id}&ext=${originalExt}&t=${t}&_h=${encodeURIComponent(rawHost)}&_u=${encodeURIComponent(u)}&_p=${encodeURIComponent(p)}`;
+      
+      // REDIRECTION 302 INSTANTANÉE VERS RAILWAY
+      console.log(`[TREMPLIN] Redirection vers Railway pour VOD ID: ${id}`);
+      return NextResponse.redirect(railwayUrl, { status: 302 });
+    }
+
+    // ========================================================
+    // À PARTIR D'ICI, SEUL RAILWAY EXÉCUTE CE CODE (FFMPEG)
+    // ========================================================
+
     if (!rawHost) {
       return new Response("URL du serveur manquante", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     const host = String(rawHost).replace(/\/+$/, "");
-    const u = encodeURIComponent(creds.username || creds.user || "");
-    const p = encodeURIComponent(creds.password || creds.pass || "");
     const folder = type === "series" ? "series" : "movie";
 
-    let inputUrl = `${host}/${folder}/${u}/${p}/${id}.${originalExt}`;
+    let inputUrl = `${host}/${folder}/${encodeURIComponent(u)}/${encodeURIComponent(p)}/${id}.${originalExt}`;
     console.log(`[VOD] 🔍 Vérification du lien : ${inputUrl}`);
     
     let isOk = await checkUrl(inputUrl);
@@ -60,7 +98,7 @@ export async function GET(req: Request) {
       console.log(`[VOD] ⚠️ Format .${originalExt} introuvable. Test des alternatives...`);
       const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
       for (const altExt of fallbacks) {
-        const altUrl = `${host}/${folder}/${u}/${p}/${id}.${altExt}`;
+        const altUrl = `${host}/${folder}/${encodeURIComponent(u)}/${encodeURIComponent(p)}/${id}.${altExt}`;
         if (await checkUrl(altUrl)) {
           console.log(`[VOD] ✅ Alternative trouvée ! On utilise : .${altExt}`);
           inputUrl = altUrl;
@@ -85,7 +123,7 @@ export async function GET(req: Request) {
       "pipe:1",
     ];
 
-    console.log(`[VOD] 🚀 Lancement FFmpeg -> ${inputUrl}`);
+    console.log(`[VOD] 🚀 Lancement FFmpeg sur Railway -> ${inputUrl}`);
     const ff = spawn(FFMPEG, args, { stdio: ["ignore", "pipe", "pipe"] });
 
     ff.stderr.on("data", (d) => {
