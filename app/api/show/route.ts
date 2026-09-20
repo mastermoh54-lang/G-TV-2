@@ -1,12 +1,13 @@
-// app/api/show/route.ts
 import { spawn } from "node:child_process";
 import { requireSession } from "@/lib/session";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UA = "VLC/3.0.20 LibVLC/3.0.20";
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+const RAILWAY_URL = "https://g-tv-2-production.up.railway.app";
 
 const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -29,33 +30,68 @@ async function checkUrl(url: string) {
 
 export async function GET(req: Request) {
   try {
-    const creds = (await requireSession()) as any;
     const { searchParams } = new URL(req.url);
 
     const id = searchParams.get("id");
     const originalExt = searchParams.get("ext") || "mp4";
     const t = Math.max(0, Math.floor(Number(searchParams.get("t") || 0)));
 
+    // 1. Récupération des paramètres cachés du tremplin
+    const directHost = searchParams.get("_h");
+    const directUser = searchParams.get("_u");
+    const directPass = searchParams.get("_p");
+
     if (!id) {
       return new Response("ID manquant", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
-    const rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
+    let rawHost = "";
+    let u = "";
+    let p = "";
+
+    // === DOUBLE LOGIQUE : VERCEL (TREMPLIN) vs RAILWAY (LECTURE) ===
+    if (directHost && directUser && directPass) {
+      // A. Nous sommes sur RAILWAY (les identifiants sont dans l'URL)
+      rawHost = decodeURIComponent(directHost);
+      u = decodeURIComponent(directUser);
+      p = decodeURIComponent(directPass);
+    } else {
+      // B. Nous sommes sur VERCEL (lecture du cookie)
+      let creds: any;
+      try {
+        creds = (await requireSession()) as any;
+      } catch (e) {
+        return new Response("Non autorisé (Cookie manquant sur Vercel)", { status: 401, headers: NO_CACHE_HEADERS });
+      }
+
+      rawHost = creds.baseUrl || creds.url || creds.serverUrl || creds.server || creds.host || "";
+      u = creds.username || creds.user || "";
+      p = creds.password || creds.pass || "";
+
+      // Vercel construit l'URL secrète vers Railway
+      const railwayUrl = `${RAILWAY_URL}/api/show?id=${id}&ext=${originalExt}&t=${t}&_h=${encodeURIComponent(rawHost)}&_u=${encodeURIComponent(u)}&_p=${encodeURIComponent(p)}`;
+      
+      // REDIRECTION 302 INSTANTANÉE VERS RAILWAY
+      console.log(`[TREMPLIN SHOW] Redirection vers Railway pour Serie ID: ${id}`);
+      return NextResponse.redirect(railwayUrl, { status: 302 });
+    }
+
+    // ========================================================
+    // À PARTIR D'ICI, SEUL RAILWAY EXÉCUTE CE CODE (FFMPEG)
+    // ========================================================
+
     if (!rawHost) {
       return new Response("URL du serveur manquante", { status: 400, headers: NO_CACHE_HEADERS });
     }
 
     const host = String(rawHost).replace(/\/+$/, "");
-    const u = encodeURIComponent(creds.username || creds.user || "");
-    const p = encodeURIComponent(creds.password || creds.pass || "");
-
-    let inputUrl = `${host}/series/${u}/${p}/${id}.${originalExt}`;
+    let inputUrl = `${host}/series/${encodeURIComponent(u)}/${encodeURIComponent(p)}/${id}.${originalExt}`;
 
     let isOk = await checkUrl(inputUrl);
     if (!isOk) {
       const fallbacks = ["mp4", "mkv", "avi", "ts"].filter(e => e !== originalExt);
       for (const altExt of fallbacks) {
-        const altUrl = `${host}/series/${u}/${p}/${id}.${altExt}`;
+        const altUrl = `${host}/series/${encodeURIComponent(u)}/${encodeURIComponent(p)}/${id}.${altExt}`;
         if (await checkUrl(altUrl)) {
           inputUrl = altUrl;
           break;
