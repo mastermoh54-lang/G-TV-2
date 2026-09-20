@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Play, Star, Clock, X, User, Info, Maximize, Video, ArrowLeft, Heart, Film } from "lucide-react";
 import { useLibrary } from "@/store/library";
 import { api } from "@/lib/api";
-import { tmdb } from "@/lib/tmdb";
+import { tmdb } from "@/lib/tmdb/client";
 import { ratingNum, yearFrom, cleanName } from "@/lib/utils";
 import { CinemaLoader } from "@/components/ui/CinemaLoader"; 
 
